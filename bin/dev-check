@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -e
+
+echo "🔍 Running development checks..."
+
+echo "📦 Validating composer.json..."
+composer validate --strict
+
+echo "🎨 Checking code style..."
+./vendor/bin/php-cs-fixer fix --dry-run --diff src
+
+echo "🔍 Running PHPStan..."
+./vendor/bin/phpstan analyse src
+
+echo "⚠️  Skipping Psalm (not compatible with PHP 8.4 yet)"
+
+echo "🧪 Running tests..."
+./vendor/bin/phpunit
+
+echo "✅ All checks passed!"

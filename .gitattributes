@@ -1,0 +1,43 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# PHP files
+*.php text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# YAML files
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown files
+*.md text eol=lf
+
+# Composer files
+composer.json text eol=lf
+composer.lock text eol=lf
+
+# Git files
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Documentation
+README.md text eol=lf
+CHANGELOG.md text eol=lf
+LICENSE text eol=lf
+
+# Export-ignore
+/.github/
+/docs/
+/tests/
+/tools/
+/.devcontainer/
+phpunit.xml
+phpstan.neon
+psalm.xml
+php-cs-fixer.php
+rector.php
+.editorconfig
+.gitattributes
+.gitignore

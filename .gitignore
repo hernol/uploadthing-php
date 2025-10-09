@@ -1,0 +1,45 @@
+# Composer
+/vendor/
+composer.lock
+
+# PHPUnit
+.phpunit.cache/
+coverage/
+coverage.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+/build/
+/dist/
+
+# Temporary files
+/tmp/
+/temp/
+
+# PHP CS Fixer
+.php-cs-fixer.cache
+
+# PHPStan
+phpstan-baseline.neon
+phpstan.neon.dist
+
+# Psalm
+psalm-baseline.xml
+psalm.xml.dist

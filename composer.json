@@ -1,0 +1,65 @@
+{
+    "name": "uploadthing/uploadthing-php",
+    "description": "A high-quality PHP client for the UploadThing REST API",
+    "version": "0.1.0",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "uploadthing",
+        "file-upload",
+        "api-client",
+        "php",
+        "rest-api",
+        "webhooks",
+        "multipart",
+        "chunked-upload",
+        "presigned-urls"
+    ],
+    "authors": [
+        {
+            "name": "UploadThing PHP Client Contributors",
+            "homepage": "https://github.com/uploadthing/uploadthing-php"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/log": "^1.0|^2.0|^3.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "php-http/mock-client": "^1.0",
+        "phpstan/phpstan": "^1.10",
+        "phpunit/phpunit": "^10.0",
+        "rector/rector": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "UploadThing\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "UploadThing\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage",
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "phpstan": "phpstan analyse",
+        "psalm": "psalm",
+        "dev-check": "./bin/dev-check"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

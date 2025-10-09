@@ -1,0 +1,15 @@
+parameters:
+    level: max
+    paths:
+        - ../src
+    excludePaths:
+        - ../tests
+    treatPhpDocTypesAsCertain: false
+    bootstrapFiles:
+        - ../vendor/autoload.php
+    parallel:
+        processTimeout: 300.0
+    tmpDir: .phpstan-tmp
+    ignoreErrors:
+        - identifier: missingType.iterableValue
+        - identifier: missingType.generics

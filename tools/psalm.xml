@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<psalm
+    errorLevel="1"
+    strictMixedContext="true"
+    resolveFromConfigFile="true"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="https://getpsalm.org/schema/config"
+    xsi:schemaLocation="https://getpsalm.org/schema/config vendor/psalm/plugin-schema/config.xsd"
+>
+    <projectFiles>
+        <directory name="../src"/>
+        <ignoreFiles>
+            <directory name="../tests"/>
+        </ignoreFiles>
+    </projectFiles>
+    
+    <issueHandlers>
+        <LessSpecificReturnType errorLevel="suppress"/>
+        <MoreSpecificReturnType errorLevel="suppress"/>
+        <MixedAssignment errorLevel="suppress"/>
+        <MixedArgument errorLevel="suppress"/>
+        <MixedReturnStatement errorLevel="suppress"/>
+        <MixedMethodCall errorLevel="suppress"/>
+        <MixedPropertyFetch errorLevel="suppress"/>
+        <MixedPropertyAssignment errorLevel="suppress"/>
+        <MixedArrayAccess errorLevel="suppress"/>
+        <MixedArrayOffset errorLevel="suppress"/>
+        <MixedArrayAssignment errorLevel="suppress"/>
+        <MixedOperand errorLevel="suppress"/>
+        <MixedInferredReturnType errorLevel="suppress"/>
+        <MixedPropertyTypeCoercion errorLevel="suppress"/>
+        <MixedArgumentTypeCoercion errorLevel="suppress"/>
+        <MixedReturnTypeCoercion errorLevel="suppress"/>
+        <MixedArrayTypeCoercion errorLevel="suppress"/>
+        <MixedStringOffsetAssignment errorLevel="suppress"/>
+        <MixedFunctionCall errorLevel="suppress"/>
+        <MixedTypeCoercion errorLevel="suppress"/>
+    </issueHandlers>
+</psalm>
