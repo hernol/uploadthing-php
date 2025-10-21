@@ -41,7 +41,7 @@ final readonly class Client
      */
     public function files(): Files
     {
-        return new Files($this->httpClient, $this->authenticator, $this->config->baseUrl);
+        return new Files($this->httpClient, $this->authenticator, $this->config->baseUrl, $this->config->apiVersion);
     }
 
     /**
@@ -49,7 +49,7 @@ final readonly class Client
      */
     public function uploads(): Uploads
     {
-        return new Uploads($this->httpClient, $this->authenticator, $this->config->baseUrl);
+        return new Uploads($this->httpClient, $this->authenticator, $this->config->baseUrl, $this->config->apiVersion);
     }
 
     /**
@@ -57,7 +57,7 @@ final readonly class Client
      */
     public function webhooks(): Webhooks
     {
-        return new Webhooks($this->httpClient, $this->authenticator, $this->config->baseUrl);
+        return new Webhooks($this->httpClient, $this->authenticator, $this->config->baseUrl, $this->config->apiVersion);
     }
 
     /**

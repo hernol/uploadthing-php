@@ -15,20 +15,22 @@ use UploadThing\Models\RenameFileRequest;
 use UploadThing\Utils\Serializer;
 
 /**
- * Files resource for managing uploaded files.
+ * Files resource for managing uploaded files using UploadThing v6 API.
  */
-final class Files
+final class Files extends AbstractResource
 {
     public function __construct(
-        private HttpClientInterface $httpClient,
-        private ApiKeyAuthenticator $authenticator,
-        private string $baseUrl,
-        private Serializer $serializer = new Serializer(),
+        HttpClientInterface $httpClient,
+        ApiKeyAuthenticator $authenticator,
+        string $baseUrl,
+        string $apiVersion,
+        Serializer $serializer = new Serializer(),
     ) {
+        parent::__construct($httpClient, $authenticator, $baseUrl, $apiVersion, $serializer);
     }
 
     /**
-     * List all files.
+     * List all files using v6 API.
      */
     public function listFiles(int $limit = 50, ?string $cursor = null): FileListResponse
     {
@@ -37,47 +39,51 @@ final class Files
             $queryParams['cursor'] = $cursor;
         }
 
-        $request = $this->createRequest('GET', '/files', queryParams: $queryParams);
+        $request = $this->createRequest('GET', "/{$this->apiVersion}/listFiles", queryParams: $queryParams);
         $response = $this->sendRequest($request);
 
         return $this->serializer->deserialize($response->getBody()->getContents(), FileListResponse::class);
     }
 
     /**
-     * Get a specific file by ID.
+     * Get a specific file by ID using v6 API.
      */
     public function getFile(string $fileId): File
     {
-        $request = $this->createRequest('GET', "/files/{$fileId}");
+        $request = $this->createRequest('GET', "/{$this->apiVersion}/getFile", queryParams: ['fileId' => $fileId]);
         $response = $this->sendRequest($request);
 
         return $this->serializer->deserialize($response->getBody()->getContents(), File::class);
     }
 
     /**
-     * Delete a file by ID.
+     * Delete a file by ID using v6 API.
      */
     public function deleteFile(string $fileId): void
     {
-        $request = $this->createRequest('DELETE', "/files/{$fileId}");
+        $requestBody = ['fileId' => $fileId];
+        $request = $this->createRequest('POST', "/{$this->apiVersion}/deleteFile", body: $requestBody);
         $this->sendRequest($request);
     }
 
     /**
-     * Rename a file.
+     * Rename a file using v6 API.
      */
     public function renameFile(string $fileId, string $newName): File
     {
-        $requestBody = new RenameFileRequest($newName);
+        $requestBody = [
+            'fileId' => $fileId,
+            'newName' => $newName
+        ];
 
-        $request = $this->createRequest('POST', "/files/{$fileId}/rename", body: $requestBody);
+        $request = $this->createRequest('POST', "/{$this->apiVersion}/renameFile", body: $requestBody);
         $response = $this->sendRequest($request);
 
         return $this->serializer->deserialize($response->getBody()->getContents(), File::class);
     }
 
     /**
-     * Upload a file from a local path.
+     * Upload a file from a local path using v6 API.
      */
     public function uploadFile(string $filePath, ?string $name = null): File
     {
@@ -96,27 +102,38 @@ final class Files
     }
 
     /**
-     * Upload file content from a string.
+     * Upload file content from a string using v6 API.
      */
     public function uploadContent(string $content, string $name, ?string $mimeType = null): File
     {
         $mimeType = $mimeType ?? $this->detectMimeType($name, $content);
         
-        $multipartBuilder = new \UploadThing\Utils\MultipartBuilder();
-        $multipartBuilder
-            ->addField('name', $name)
-            ->addField('size', (string) strlen($content))
-            ->addField('mimeType', $mimeType)
-            ->addFile('file', $name, $content, $mimeType);
+        // Use the uploadFiles endpoint for direct upload
+        $requestBody = [
+            'files' => [
+                [
+                    'name' => $name,
+                    'size' => strlen($content),
+                    'type' => $mimeType,
+                    'content' => base64_encode($content)
+                ]
+            ]
+        ];
 
-        $request = $this->createMultipartRequest('POST', '/files/upload', $multipartBuilder);
+        $request = $this->createRequest('POST', "/{$this->apiVersion}/uploadFiles", body: $requestBody);
         $response = $this->sendRequest($request);
 
-        return $this->serializer->deserialize($response->getBody()->getContents(), File::class);
+        $data = json_decode($response->getBody()->getContents(), true);
+        
+        if (!isset($data['data'][0])) {
+            throw new \RuntimeException('Invalid upload response');
+        }
+
+        return $this->serializer->deserialize(json_encode($data['data'][0]), File::class);
     }
 
     /**
-     * Upload a file from a stream resource.
+     * Upload a file from a stream resource using v6 API.
      */
     public function uploadStream(mixed $stream, string $name, ?string $mimeType = null): File
     {
@@ -133,7 +150,7 @@ final class Files
     }
 
     /**
-     * Upload a file with progress tracking.
+     * Upload a file with progress tracking using v6 API.
      */
     public function uploadFileWithProgress(
         string $filePath, 
@@ -151,7 +168,7 @@ final class Files
             throw new \RuntimeException("Failed to get file size: {$filePath}");
         }
 
-        // For large files, use chunked upload
+        // For large files, use prepareUpload + uploadFiles flow
         if ($fileSize > 10 * 1024 * 1024) { // 10MB threshold
             return $this->uploadFileChunked($filePath, $name, $progressCallback);
         }
@@ -176,7 +193,7 @@ final class Files
     }
 
     /**
-     * Upload a file using chunked upload for large files.
+     * Upload a file using chunked upload for large files with v6 API.
      */
     public function uploadFileChunked(
         string $filePath, 
@@ -189,193 +206,147 @@ final class Files
         }
 
         $mimeType = $this->detectMimeType($name, '');
-        $chunkSize = 5 * 1024 * 1024; // 5MB chunks
         
-        // Create upload session
-        $session = $this->createUploadSession($name, $fileSize, $mimeType);
-        
+        // Step 1: Prepare upload (S3 POST data)
+        $prepareResponse = $this->prepareUpload($name, $fileSize, $mimeType);
+
+        if (!isset($prepareResponse['data'][0])) {
+            throw new \RuntimeException('Invalid prepareUpload response');
+        }
+
+        $item = $prepareResponse['data'][0];
+        if (!isset($item['url'], $item['fields']) || !is_array($item['fields'])) {
+            throw new \RuntimeException('Missing S3 POST data (url/fields) from prepareUpload');
+        }
+
+        // Step 2: Upload file to S3 using POST form fields
+        $this->uploadToS3Post($item['url'], $item['fields'], $filePath, $mimeType, $progressCallback);
+
+        // Step 3: Finalize via polling if provided, else fallback to serverCallback when fileId is present
+        $fileId = $this->finalizePolling($item);
+        if ($fileId !== null) {
+            return $this->getFile($fileId);
+        }
+
+        if (isset($item['fileId'])) {
+            $this->serverCallback($item['fileId']);
+            return $this->getFile($item['fileId']);
+        }
+
+        throw new \RuntimeException('Upload completed but file could not be finalized');
+    }
+
+    /**
+     * Prepare upload using v6 prepareUpload endpoint.
+     */
+    private function prepareUpload(string $fileName, int $fileSize, string $mimeType): array
+    {
+        $requestBody = [
+            'files' => [
+                [
+                    'name' => $fileName,
+                    'size' => $fileSize,
+                    'type' => $mimeType
+                ]
+            ]
+        ];
+
+        $request = $this->createRequest('POST', "/{$this->apiVersion}/prepareUpload", body: $requestBody);
+        $response = $this->sendRequest($request);
+
+        return json_decode($response->getBody()->getContents(), true);
+    }
+
+    /**
+     * Upload a file to S3 using a POST with provided fields.
+     */
+    private function uploadToS3Post(string $s3Url, array $fields, string $filePath, ?string $contentType = null, ?callable $progressCallback = null): void
+    {
+        $fileSize = filesize($filePath);
+        if ($fileSize === false) {
+            throw new \RuntimeException("Failed to get file size: {$filePath}");
+        }
+
         $handle = fopen($filePath, 'rb');
         if ($handle === false) {
             throw new \RuntimeException("Failed to open file: {$filePath}");
         }
 
         try {
-            $uploadedBytes = 0;
-            
-            while (!feof($handle)) {
-                $chunk = fread($handle, $chunkSize);
-                if ($chunk === false) {
-                    throw new \RuntimeException("Failed to read chunk from file");
-                }
-
-                // Upload chunk
-                $this->uploadChunk($session->id, $chunk, $uploadedBytes);
-                
-                $uploadedBytes += strlen($chunk);
-                
-                if ($progressCallback !== null) {
-                    $progressCallback($uploadedBytes, $fileSize);
-                }
+            $content = stream_get_contents($handle);
+            if ($content === false) {
+                throw new \RuntimeException("Failed to read file: {$filePath}");
             }
 
-            // Complete upload
-            $completedSession = $this->completeUpload($session->id);
-            
-            if ($completedSession->fileId === null) {
-                throw new \RuntimeException('Upload completed but no file ID returned');
+            $multipartBuilder = new \UploadThing\Utils\MultipartBuilder();
+            foreach ($fields as $name => $value) {
+                $multipartBuilder->addField((string) $name, (string) $value);
+            }
+            $multipartBuilder->addFile('file', basename($filePath), $content, $contentType);
+
+            $request = new \GuzzleHttp\Psr7\Request('POST', $s3Url);
+            $request = $request
+                ->withHeader('Content-Type', $multipartBuilder->getContentType())
+                ->withBody(\GuzzleHttp\Psr7\Utils::streamFor($multipartBuilder->build()));
+
+            $response = $this->httpClient->sendRequest($request);
+
+            if ($response->getStatusCode() >= 400) {
+                throw ApiException::fromResponse($response);
             }
 
-            return $this->getFile($completedSession->fileId);
-            
+            if ($progressCallback !== null) {
+                $progressCallback($fileSize, $fileSize);
+            }
+
         } finally {
             fclose($handle);
         }
     }
 
     /**
-     * Upload a chunk of data to an upload session.
+     * Complete upload using v6 serverCallback endpoint.
      */
-    private function uploadChunk(string $uploadId, string $chunk, int $offset): void
+    private function serverCallback(string $fileId): void
     {
-        $multipartBuilder = new \UploadThing\Utils\MultipartBuilder();
-        $multipartBuilder
-            ->addField('uploadId', $uploadId)
-            ->addField('offset', (string) $offset)
-            ->addFile('chunk', 'chunk.bin', $chunk, 'application/octet-stream');
+        $requestBody = [
+            'fileId' => $fileId,
+            'status' => 'completed'
+        ];
 
-        $request = $this->createMultipartRequest('POST', '/uploads/chunk', $multipartBuilder);
+        $request = $this->createRequest('POST', "/{$this->apiVersion}/serverCallback", body: $requestBody);
         $this->sendRequest($request);
     }
 
     /**
-     * Create an upload session for chunked uploads.
+     * Finalize upload using polling token if available. Returns fileId when known.
      */
-    private function createUploadSession(string $fileName, int $fileSize, string $mimeType): \UploadThing\Models\UploadSession
+    private function finalizePolling(array $prepareItem): ?string
     {
-        $uploadsResource = new \UploadThing\Resources\Uploads(
-            $this->httpClient,
-            $this->authenticator,
-            $this->baseUrl,
-            $this->serializer
-        );
-        
-        return $uploadsResource->createUploadSession($fileName, $fileSize, $mimeType);
-    }
+        $pollingUrl = $prepareItem['pollingUrl'] ?? null;
+        $pollingJwt = $prepareItem['pollingJwt'] ?? null;
 
-    /**
-     * Complete an upload session.
-     */
-    private function completeUpload(string $uploadId): \UploadThing\Models\UploadSession
-    {
-        $uploadsResource = new \UploadThing\Resources\Uploads(
-            $this->httpClient,
-            $this->authenticator,
-            $this->baseUrl,
-            $this->serializer
-        );
-        
-        return $uploadsResource->completeUpload($uploadId);
-    }
-
-    /**
-     * Detect MIME type from filename and content.
-     */
-    private function detectMimeType(string $filename, string $content): string
-    {
-        // Try to detect from file extension first
-        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        
-        $mimeTypes = [
-            'jpg' => 'image/jpeg',
-            'jpeg' => 'image/jpeg',
-            'png' => 'image/png',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            'svg' => 'image/svg+xml',
-            'pdf' => 'application/pdf',
-            'txt' => 'text/plain',
-            'html' => 'text/html',
-            'css' => 'text/css',
-            'js' => 'application/javascript',
-            'json' => 'application/json',
-            'xml' => 'application/xml',
-            'zip' => 'application/zip',
-            'mp4' => 'video/mp4',
-            'mp3' => 'audio/mpeg',
-            'wav' => 'audio/wav',
-        ];
-
-        if (isset($mimeTypes[$extension])) {
-            return $mimeTypes[$extension];
+        if (!$pollingUrl || !$pollingJwt) {
+            return null;
         }
 
-        // Fallback to content detection if available
-        if (function_exists('finfo_buffer')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if ($finfo !== false) {
-                $detected = finfo_buffer($finfo, $content);
-                finfo_close($finfo);
-                if ($detected !== false) {
-                    return $detected;
-                }
-            }
-        }
-
-        return 'application/octet-stream';
-    }
-
-    /**
-     * Create a multipart request.
-     */
-    private function createMultipartRequest(string $method, string $path, \UploadThing\Utils\MultipartBuilder $multipartBuilder): RequestInterface
-    {
-        $uri = $this->baseUrl . $path;
-        $request = new \GuzzleHttp\Psr7\Request($method, $uri);
-        
+        $request = new \GuzzleHttp\Psr7\Request('POST', $pollingUrl);
         $request = $request
-            ->withHeader('Content-Type', $multipartBuilder->getContentType())
-            ->withBody(\GuzzleHttp\Psr7\Utils::streamFor($multipartBuilder->build()));
+            ->withHeader('Authorization', 'Bearer ' . $pollingJwt)
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody(\GuzzleHttp\Psr7\Utils::streamFor(json_encode(new \stdClass())));
 
-        return $this->authenticator->authenticate($request);
-    }
-
-    /**
-     * Create a PSR-7 request.
-     */
-    private function createRequest(
-        string $method,
-        string $path,
-        array $queryParams = [],
-        ?object $body = null,
-    ): RequestInterface {
-        $uri = $this->baseUrl . $path;
-
-        if (!empty($queryParams)) {
-            $uri .= '?' . http_build_query($queryParams);
-        }
-
-        $request = new \GuzzleHttp\Psr7\Request($method, $uri);
-
-        if ($body !== null) {
-            $request = $request->withBody(
-                \GuzzleHttp\Psr7\Utils::streamFor($this->serializer->serialize($body))
-            );
-        }
-
-        return $this->authenticator->authenticate($request);
-    }
-
-    /**
-     * Send a request and handle the response.
-     */
-    private function sendRequest(RequestInterface $request): ResponseInterface
-    {
         $response = $this->httpClient->sendRequest($request);
-
         if ($response->getStatusCode() >= 400) {
             throw ApiException::fromResponse($response);
         }
 
-        return $response;
+        $data = json_decode($response->getBody()->getContents(), true);
+        if (is_array($data) && isset($data['fileId']) && is_string($data['fileId'])) {
+            return $data['fileId'];
+        }
+
+        return null;
     }
+
 }

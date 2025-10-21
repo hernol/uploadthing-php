@@ -9,87 +9,26 @@ use Psr\Http\Message\ResponseInterface;
 use UploadThing\Auth\ApiKeyAuthenticator;
 use UploadThing\Exceptions\ApiException;
 use UploadThing\Http\HttpClientInterface;
-use UploadThing\Models\CreateWebhookRequest;
-use UploadThing\Models\UpdateWebhookRequest;
-use UploadThing\Models\Webhook;
 use UploadThing\Models\WebhookEvent;
-use UploadThing\Models\WebhookListResponse;
 use UploadThing\Utils\Serializer;
 use UploadThing\Utils\WebhookVerifier;
 
 /**
- * Webhooks resource for managing webhook configurations.
+ * Webhooks resource for handling webhook events using UploadThing v6 API.
+ * 
+ * Note: UploadThing v6 API doesn't have traditional webhook management endpoints.
+ * This resource focuses on webhook event handling and verification.
  */
-final class Webhooks
+final class Webhooks extends AbstractResource
 {
     public function __construct(
-        private HttpClientInterface $httpClient,
-        private ApiKeyAuthenticator $authenticator,
-        private string $baseUrl,
-        private Serializer $serializer = new Serializer(),
+        HttpClientInterface $httpClient,
+        ApiKeyAuthenticator $authenticator,
+        string $baseUrl,
+        string $apiVersion,
+        Serializer $serializer = new Serializer(),
     ) {
-    }
-
-    /**
-     * List all webhooks.
-     */
-    public function listWebhooks(int $limit = 50, ?string $cursor = null): WebhookListResponse
-    {
-        $queryParams = ['limit' => $limit];
-        if ($cursor !== null) {
-            $queryParams['cursor'] = $cursor;
-        }
-
-        $request = $this->createRequest('GET', '/webhooks', queryParams: $queryParams);
-        $response = $this->sendRequest($request);
-
-        return $this->serializer->deserialize($response->getBody()->getContents(), WebhookListResponse::class);
-    }
-
-    /**
-     * Create a new webhook.
-     */
-    public function createWebhook(string $url, array $events = []): Webhook
-    {
-        $requestBody = new CreateWebhookRequest($url, $events);
-
-        $request = $this->createRequest('POST', '/webhooks', body: $requestBody);
-        $response = $this->sendRequest($request);
-
-        return $this->serializer->deserialize($response->getBody()->getContents(), Webhook::class);
-    }
-
-    /**
-     * Get a specific webhook by ID.
-     */
-    public function getWebhook(string $webhookId): Webhook
-    {
-        $request = $this->createRequest('GET', "/webhooks/{$webhookId}");
-        $response = $this->sendRequest($request);
-
-        return $this->serializer->deserialize($response->getBody()->getContents(), Webhook::class);
-    }
-
-    /**
-     * Update a webhook.
-     */
-    public function updateWebhook(string $webhookId, ?string $url = null, ?array $events = null): Webhook
-    {
-        $requestBody = new UpdateWebhookRequest($url, $events);
-
-        $request = $this->createRequest('PUT', "/webhooks/{$webhookId}", body: $requestBody);
-        $response = $this->sendRequest($request);
-
-        return $this->serializer->deserialize($response->getBody()->getContents(), Webhook::class);
-    }
-
-    /**
-     * Delete a webhook.
-     */
-    public function deleteWebhook(string $webhookId): void
-    {
-        $request = $this->createRequest('DELETE', "/webhooks/{$webhookId}");
-        $this->sendRequest($request);
+        parent::__construct($httpClient, $authenticator, $baseUrl, $apiVersion, $serializer);
     }
 
     /**
@@ -160,42 +99,136 @@ final class Webhooks
     }
 
     /**
-     * Create a PSR-7 request.
+     * Handle incoming webhook request from UploadThing.
+     * This method processes the webhook payload and returns the parsed event.
      */
-    private function createRequest(
-        string $method,
-        string $path,
-        array $queryParams = [],
-        ?object $body = null,
-    ): RequestInterface {
-        $uri = $this->baseUrl . $path;
-
-        if (!empty($queryParams)) {
-            $uri .= '?' . http_build_query($queryParams);
+    public function handleWebhook(string $payload, array $headers, string $secret): WebhookEvent
+    {
+        // Extract signature from headers
+        $signature = $this->extractSignature($headers);
+        
+        if (empty($signature)) {
+            throw new \InvalidArgumentException('No signature found in headers');
         }
 
-        $request = new \GuzzleHttp\Psr7\Request($method, $uri);
-
-        if ($body !== null) {
-            $request = $request->withBody(
-                \GuzzleHttp\Psr7\Utils::streamFor($this->serializer->serialize($body))
-            );
-        }
-
-        return $this->authenticator->authenticate($request);
+        return $this->verifyAndParse($payload, $signature, $secret);
     }
 
     /**
-     * Send a request and handle the response.
+     * Handle webhook from PHP superglobals (useful for webhook endpoints).
      */
-    private function sendRequest(RequestInterface $request): ResponseInterface
+    public function handleWebhookFromGlobals(string $secret): WebhookEvent
     {
-        $response = $this->httpClient->sendRequest($request);
-
-        if ($response->getStatusCode() >= 400) {
-            throw ApiException::fromResponse($response);
+        $payload = file_get_contents('php://input');
+        if ($payload === false) {
+            throw new \RuntimeException('Failed to read request body');
         }
 
-        return $response;
+        $headers = getallheaders() ?: [];
+        
+        return $this->handleWebhook($payload, $headers, $secret);
     }
+
+    /**
+     * Extract signature from headers.
+     */
+    private function extractSignature(array $headers): string
+    {
+        // Look for UploadThing signature in various header formats
+        $signatureHeaders = [
+            'X-UploadThing-Signature',
+            'x-uploadthing-signature',
+            'X-UploadThing-Signature-256',
+            'x-uploadthing-signature-256',
+            'UploadThing-Signature',
+            'uploadthing-signature'
+        ];
+
+        foreach ($signatureHeaders as $header) {
+            if (isset($headers[$header])) {
+                return $headers[$header];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Process file upload completion webhook.
+     * This is typically called when a file upload is completed.
+     */
+    public function processUploadCompletion(string $fileId, array $metadata = []): void
+    {
+        // This would typically be handled by the serverCallback endpoint
+        // but we can provide a helper method for processing completion events
+        $event = new WebhookEvent(
+            type: 'upload.completed',
+            data: [
+                'fileId' => $fileId,
+                'metadata' => $metadata
+            ]
+        );
+
+        // You can add custom processing logic here
+        $this->onUploadCompleted($event);
+    }
+
+    /**
+     * Process file deletion webhook.
+     */
+    public function processFileDeletion(string $fileId): void
+    {
+        $event = new WebhookEvent(
+            type: 'file.deleted',
+            data: [
+                'fileId' => $fileId
+            ]
+        );
+
+        $this->onFileDeleted($event);
+    }
+
+    /**
+     * Process file update webhook.
+     */
+    public function processFileUpdate(string $fileId, array $updates): void
+    {
+        $event = new WebhookEvent(
+            type: 'file.updated',
+            data: [
+                'fileId' => $fileId,
+                'updates' => $updates
+            ]
+        );
+
+        $this->onFileUpdated($event);
+    }
+
+    /**
+     * Callback for upload completion events.
+     * Override this method to handle upload completion.
+     */
+    protected function onUploadCompleted(WebhookEvent $event): void
+    {
+        // Default implementation - override in subclasses
+    }
+
+    /**
+     * Callback for file deletion events.
+     * Override this method to handle file deletion.
+     */
+    protected function onFileDeleted(WebhookEvent $event): void
+    {
+        // Default implementation - override in subclasses
+    }
+
+    /**
+     * Callback for file update events.
+     * Override this method to handle file updates.
+     */
+    protected function onFileUpdated(WebhookEvent $event): void
+    {
+        // Default implementation - override in subclasses
+    }
+
 }

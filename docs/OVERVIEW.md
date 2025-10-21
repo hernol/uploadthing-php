@@ -1,19 +1,21 @@
-# UploadThing PHP Client Documentation
+# UploadThing PHP Client Documentation - v6 API
 
 ## Overview
 
-The UploadThing PHP Client is a high-quality, type-safe PHP library for interacting with the UploadThing REST API. It provides a clean, intuitive interface for managing file uploads, webhooks, and other UploadThing services.
+The UploadThing PHP Client is a high-quality, type-safe PHP library for interacting with the UploadThing v6 REST API. It provides a clean, intuitive interface for managing file uploads, webhooks, and other UploadThing services.
 
 ## Features
 
 - **Type Safety**: Full PHP 8.1+ type declarations and strict typing
 - **PSR Compliance**: Uses PSR-18 HTTP client interfaces and PSR-3 logging
+- **V6 API Compatible**: Uses correct UploadThing v6 endpoints
 - **Error Handling**: Comprehensive exception handling with detailed error information
 - **Retry Logic**: Automatic retries with exponential backoff
 - **Rate Limiting**: Built-in rate limit handling
-- **File Uploads**: Support for multipart uploads and streaming
-- **Webhook Support**: Secure webhook signature verification
+- **File Uploads**: Multiple upload methods (direct, presigned URL, chunked)
+- **Webhook Support**: Secure webhook signature verification with HMAC-SHA256
 - **Framework Integration**: Ready-to-use Laravel and Symfony integrations
+- **Progress Tracking**: Real-time upload progress callbacks
 
 ## Installation
 
@@ -31,20 +33,20 @@ use UploadThing\Config;
 
 // Create configuration
 $config = Config::create()
-    ->withApiKey('your-api-key')
-    ->withBaseUrl('https://api.uploadthing.com');
+    ->withApiKeyFromEnv('UPLOADTHING_API_KEY'); // Set your API key
 
 // Create client
-$client = new Client($config);
+$client = Client::create($config);
 
 // Upload a file
-$file = $client->files()->uploadFile('/path/to/file.jpg');
+$file = $client->files()->uploadFile('/path/to/file.jpg', 'my-image.jpg');
+echo "File uploaded: {$file->url}\n";
 
 // List files
-$files = $client->files()->listFiles();
-
-// Get file details
-$fileDetails = $client->files()->getFile($file->id);
+$fileList = $client->files()->listFiles();
+foreach ($fileList->files as $file) {
+    echo "- {$file->name} ({$file->size} bytes)\n";
+}
 ```
 
 ## Configuration
@@ -56,7 +58,8 @@ use UploadThing\Config;
 
 $config = Config::create()
     ->withApiKey('your-api-key')
-    ->withBaseUrl('https://api.uploadthing.com')
+    ->withBaseUrl('https://api.uploadthing.com') // Default
+    ->withApiVersion('v6') // Default
     ->withTimeout(30)
     ->withRetryPolicy(3, 1.0)
     ->withUserAgent('my-app/1.0.0');
@@ -66,6 +69,7 @@ $config = Config::create()
 
 - `apiKey`: Your UploadThing API key
 - `baseUrl`: The base URL for the API (default: `https://api.uploadthing.com`)
+- `apiVersion`: API version (default: `v6`)
 - `timeout`: Request timeout in seconds (default: 30)
 - `maxRetries`: Maximum number of retries (default: 3)
 - `retryDelay`: Base delay for retries in seconds (default: 1.0)
@@ -87,6 +91,20 @@ $config = Config::create()->withApiKeyFromEnv('UPLOADTHING_API_KEY');
 // Custom environment variable name
 $config = Config::create()->withApiKeyFromEnv('MY_API_KEY');
 ```
+
+## V6 API Endpoints
+
+The client uses the following UploadThing v6 API endpoints:
+
+| **Endpoint** | **Method** | **Purpose** |
+|--------------|------------|-------------|
+| `/v6/prepareUpload` | POST | Prepare file upload, get presigned URL |
+| `/v6/uploadFiles` | POST | Upload files directly |
+| `/v6/serverCallback` | POST | Complete upload process |
+| `/v6/listFiles` | GET | List files with pagination |
+| `/v6/getFile` | GET | Get file details |
+| `/v6/deleteFile` | POST | Delete file |
+| `/v6/renameFile` | POST | Rename file |
 
 ## Error Handling
 
@@ -114,13 +132,35 @@ try {
 
 ## Resources
 
-The client is organized into resource classes that correspond to different parts of the UploadThing API:
+The client is organized into resource classes that correspond to different parts of the UploadThing v6 API:
 
-- **Files**: Manage uploaded files
-- **Uploads**: Handle file upload sessions
-- **Webhooks**: Configure webhook endpoints
+- **Files**: Manage uploaded files using v6 endpoints
+- **Uploads**: Handle file upload sessions using v6 endpoints
+- **Webhooks**: Handle webhook events and verification
 
 Each resource provides methods for common operations like listing, creating, updating, and deleting.
+
+## Upload Methods
+
+### Direct Upload (Small Files)
+```php
+$file = $client->files()->uploadContent($content, 'file.txt');
+```
+
+### Presigned URL Upload (Large Files)
+```php
+// Prepare upload
+$prepareData = $client->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
+
+// Upload to presigned URL (client-side)
+// Then complete the upload
+$client->uploads()->serverCallback($prepareData['data'][0]['fileId']);
+```
+
+### Chunked Upload (Very Large Files)
+```php
+$file = $client->files()->uploadFileChunked('/path/to/large-file.zip', 'large-file.zip');
+```
 
 ## Framework Integration
 

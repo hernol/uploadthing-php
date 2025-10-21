@@ -100,14 +100,14 @@ final class UploadHelper
     }
 
     /**
-     * Get a presigned URL for client-side uploads.
+     * Get upload preparation data for client-side uploads.
      */
-    public function getPresignedUrl(
+    public function prepareUpload(
         string $fileName,
         int $fileSize,
         ?string $mimeType = null
     ): array {
-        return $this->uploadsResource->getPresignedUrl($fileName, $fileSize, $mimeType);
+        return $this->uploadsResource->prepareUpload($fileName, $fileSize, $mimeType);
     }
 
     /**

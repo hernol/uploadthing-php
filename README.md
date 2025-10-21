@@ -1,6 +1,6 @@
-# UploadThing PHP Client
+# UploadThing PHP Client - v6 API Compatible
 
-A high-quality, type-safe PHP client for the UploadThing REST API.
+A high-quality, type-safe PHP client for the UploadThing v6 REST API.
 
 [![CI](https://github.com/uploadthing/uploadthing-php/workflows/CI/badge.svg)](https://github.com/uploadthing/uploadthing-php/actions)
 [![PHP Version](https://img.shields.io/packagist/php-v/uploadthing/uploadthing-php)](https://packagist.org/packages/uploadthing/uploadthing-php)
@@ -9,13 +9,15 @@ A high-quality, type-safe PHP client for the UploadThing REST API.
 
 ## Features
 
+- ✅ **V6 API Compatible**: Uses correct UploadThing v6 endpoints
 - ✅ **Type-safe**: Full PHP 8.1+ type declarations and strict typing
 - ✅ **PSR-18 compliant**: Uses standard HTTP client interfaces
 - ✅ **Comprehensive error handling**: Typed exceptions with detailed error information
 - ✅ **Automatic retries**: Exponential backoff with configurable retry policies
 - ✅ **Rate limiting**: Built-in rate limit handling and backoff
-- ✅ **File uploads**: Support for multipart uploads, streaming, chunked uploads, progress tracking, and presigned URLs
-- ✅ **Webhook verification**: Secure webhook signature validation with timestamp tolerance
+- ✅ **Multiple upload methods**: Direct upload, presigned URL, chunked uploads
+- ✅ **Progress tracking**: Real-time upload progress callbacks
+- ✅ **Webhook verification**: HMAC-SHA256 signature validation with timestamp tolerance
 - ✅ **Framework integrations**: Ready-to-use Laravel and Symfony integrations
 - ✅ **Comprehensive testing**: 100% test coverage with unit and integration tests
 
@@ -37,11 +39,10 @@ use UploadThing\Config;
 
 // Create configuration
 $config = Config::create()
-    ->withApiKey('your-api-key')
-    ->withBaseUrl('https://api.uploadthing.com');
+    ->withApiKeyFromEnv('UPLOADTHING_API_KEY'); // Set your API key
 
 // Create client
-$client = new Client($config);
+$client = Client::create($config);
 
 // Upload a file (automatic method selection)
 $file = $client->uploadHelper()->uploadFile('/path/to/file.jpg');
@@ -59,11 +60,8 @@ $file = $client->files()->uploadFileWithProgress(
 $file = $client->uploads()->uploadWithPresignedUrl('/path/to/huge-file.zip');
 
 // Handle webhooks with signature verification
-$handler = $client->createWebhookHandler('your-webhook-secret');
-$handler->on('file.uploaded', function ($event) {
-    echo "File uploaded: {$event->file->name}\n";
-});
-$event = $handler->handle($payload, $headers);
+$webhookEvent = $client->webhooks()->handleWebhookFromGlobals('your-webhook-secret');
+echo "Event type: {$webhookEvent->type}\n";
 
 // List files
 $files = $client->files()->listFiles();
@@ -71,6 +69,20 @@ $files = $client->files()->listFiles();
 // Get file details
 $fileDetails = $client->files()->getFile($file->id);
 ```
+
+### V6 API Endpoints
+
+The client uses the following UploadThing v6 API endpoints:
+
+| **Endpoint** | **Method** | **Purpose** |
+|--------------|------------|-------------|
+| `/v6/prepareUpload` | POST | Prepare file upload, get presigned URL |
+| `/v6/uploadFiles` | POST | Upload files directly |
+| `/v6/serverCallback` | POST | Complete upload process |
+| `/v6/listFiles` | GET | List files with pagination |
+| `/v6/getFile` | GET | Get file details |
+| `/v6/deleteFile` | POST | Delete file |
+| `/v6/renameFile` | POST | Rename file |
 
 ### Authentication
 
@@ -86,6 +98,11 @@ $config = Config::create()
 // Using environment variable
 $config = Config::create()
     ->withApiKeyFromEnv('UPLOADTHING_API_KEY');
+
+// With v6 API version (default)
+$config = Config::create()
+    ->withApiKeyFromEnv()
+    ->withApiVersion('v6');
 ```
 
 ### Error Handling
@@ -112,19 +129,52 @@ try {
 }
 ```
 
+### Upload Methods
+
+#### Direct Upload (Small Files)
+```php
+$file = $client->files()->uploadContent($content, 'file.txt');
+```
+
+#### Presigned URL Upload (Large Files)
+```php
+// Prepare upload
+$prepareData = $client->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
+
+// Upload to presigned URL (client-side)
+// Then complete the upload
+$client->uploads()->serverCallback($prepareData['data'][0]['fileId']);
+```
+
+#### Chunked Upload (Very Large Files)
+```php
+$file = $client->files()->uploadFileChunked('/path/to/large-file.zip', 'large-file.zip');
+```
+
+#### Multiple File Upload
+```php
+$results = $client->uploads()->uploadMultipleFiles([
+    '/path/to/file1.jpg',
+    '/path/to/file2.jpg',
+    '/path/to/file3.jpg'
+]);
+```
+
 ## Documentation
 
 - [📖 Full Documentation](docs/OVERVIEW.md)
 - [🔐 Authentication Guide](docs/AUTH.md)
 - [💡 Usage Examples](docs/USAGE.md)
-- [🔗 API Endpoints](docs/ENDPOINTS/)
 - [⚡ Laravel Integration](docs/LARAVEL.md)
 - [🔧 Symfony Integration](docs/SYMFONY.md)
+- [📋 API Inventory](INVENTORY.md)
+- [📝 V6 API Examples](README_V6.md)
 
 ## Requirements
 
 - PHP 8.1 or higher
 - Composer
+- UploadThing API key
 
 ## Supported PHP Versions
 
@@ -133,6 +183,34 @@ try {
 | 8.1         | ✅ Full support |
 | 8.2         | ✅ Full support |
 | 8.3         | ✅ Full support |
+
+## Framework Integration
+
+### Laravel
+
+```php
+// In your controller
+use App\Facades\UploadThing;
+
+$file = UploadThing::files()->uploadFile('/path/to/file.jpg');
+```
+
+### Symfony
+
+```php
+// In your controller
+public function __construct(private Client $uploadThingClient) {}
+
+public function upload(Request $request): JsonResponse
+{
+    $file = $this->uploadThingClient->files()->uploadFile(
+        $request->files->get('file')->getPathname(),
+        $request->files->get('file')->getClientOriginalName()
+    );
+    
+    return new JsonResponse(['file' => $file]);
+}
+```
 
 ## Contributing
 

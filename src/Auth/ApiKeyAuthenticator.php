@@ -21,7 +21,7 @@ final readonly class ApiKeyAuthenticator
      */
     public function authenticate(RequestInterface $request): RequestInterface
     {
-        return $request->withHeader('Authorization', 'Bearer ' . $this->apiKey);
+        return $request->withHeader('x-uploadthing-api-key', $this->apiKey);
     }
 
     /**

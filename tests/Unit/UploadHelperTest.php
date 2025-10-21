@@ -29,8 +29,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 
@@ -49,8 +49,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 
@@ -71,8 +71,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 
@@ -96,8 +96,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 
@@ -121,8 +121,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 
@@ -145,8 +145,8 @@ class UploadHelperTest extends TestCase
         $httpClient = $this->createMock(HttpClientInterface::class);
         $authenticator = new ApiKeyAuthenticator('test-key');
         
-        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com');
-        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com');
+        $filesResource = new Files($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
+        $uploadsResource = new Uploads($httpClient, $authenticator, 'https://api.uploadthing.com', 'v6');
         
         $uploadHelper = new UploadHelper($filesResource, $uploadsResource);
 

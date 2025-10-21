@@ -1,4 +1,4 @@
-# Symfony Integration
+# Symfony Integration - UploadThing v6 API
 
 ## Installation
 
@@ -29,6 +29,7 @@ services:
         calls:
             - withApiKeyFromEnv: ['UPLOADTHING_API_KEY']
             - withBaseUrl: ['%uploadthing.base_url%']
+            - withApiVersion: ['%uploadthing.api_version%']
             - withTimeout: ['%uploadthing.timeout%']
             - withRetryPolicy: ['%uploadthing.max_retries%', '%uploadthing.retry_delay%']
 
@@ -37,18 +38,21 @@ services:
             $httpClient: '@uploadthing.http_client'
             $authenticator: '@uploadthing.authenticator'
             $baseUrl: '%uploadthing.base_url%'
+            $apiVersion: '%uploadthing.api_version%'
 
     UploadThing\Resources\Uploads:
         arguments:
             $httpClient: '@uploadthing.http_client'
             $authenticator: '@uploadthing.authenticator'
             $baseUrl: '%uploadthing.base_url%'
+            $apiVersion: '%uploadthing.api_version%'
 
     UploadThing\Resources\Webhooks:
         arguments:
             $httpClient: '@uploadthing.http_client'
             $authenticator: '@uploadthing.authenticator'
             $baseUrl: '%uploadthing.base_url%'
+            $apiVersion: '%uploadthing.api_version%'
 
     uploadthing.http_client:
         class: UploadThing\Http\GuzzleHttpClient
@@ -71,9 +75,11 @@ Create `config/packages/uploadthing.yaml`:
 parameters:
     uploadthing.api_key: '%env(UPLOADTHING_API_KEY)%'
     uploadthing.base_url: '%env(default:UPLOADTHING_BASE_URL:https://api.uploadthing.com)%'
+    uploadthing.api_version: '%env(default:UPLOADTHING_API_VERSION:v6)%'
     uploadthing.timeout: '%env(int:UPLOADTHING_TIMEOUT:30)%'
     uploadthing.max_retries: '%env(int:UPLOADTHING_MAX_RETRIES:3)%'
     uploadthing.retry_delay: '%env(float:UPLOADTHING_RETRY_DELAY:1.0)%'
+    uploadthing.webhook_secret: '%env(UPLOADTHING_WEBHOOK_SECRET)%'
 ```
 
 ## Environment Variables
@@ -83,9 +89,11 @@ Add to your `.env` file:
 ```env
 UPLOADTHING_API_KEY=ut_sk_...
 UPLOADTHING_BASE_URL=https://api.uploadthing.com
+UPLOADTHING_API_VERSION=v6
 UPLOADTHING_TIMEOUT=30
 UPLOADTHING_MAX_RETRIES=3
 UPLOADTHING_RETRY_DELAY=1.0
+UPLOADTHING_WEBHOOK_SECRET=your-webhook-secret
 ```
 
 ## Usage Examples
@@ -174,6 +182,33 @@ class FileController extends AbstractController
             ], 500);
         }
     }
+
+    public function prepareUpload(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        
+        if (!isset($data['fileName']) || !isset($data['fileSize'])) {
+            return new JsonResponse(['error' => 'fileName and fileSize are required'], 400);
+        }
+
+        try {
+            $prepareData = $this->uploadThingClient->uploads()->prepareUpload(
+                $data['fileName'],
+                $data['fileSize'],
+                $data['mimeType'] ?? null
+            );
+
+            return new JsonResponse([
+                'success' => true,
+                'data' => $prepareData,
+            ]);
+        } catch (ApiException $e) {
+            return new JsonResponse([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
 ```
 
@@ -227,6 +262,44 @@ class FileUploadService
             ];
         }
     }
+
+    public function prepareUpload(string $fileName, int $fileSize, ?string $mimeType = null): array
+    {
+        try {
+            $prepareData = $this->uploadThingClient->uploads()->prepareUpload($fileName, $fileSize, $mimeType);
+            
+            return [
+                'success' => true,
+                'data' => $prepareData,
+            ];
+        } catch (ApiException $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    public function uploadWithProgress(string $filePath, string $fileName, callable $progressCallback): array
+    {
+        try {
+            $file = $this->uploadThingClient->files()->uploadFileWithProgress(
+                $filePath,
+                $fileName,
+                $progressCallback
+            );
+            
+            return [
+                'success' => true,
+                'file' => $file,
+            ];
+        } catch (ApiException $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
 }
 ```
 
@@ -242,10 +315,11 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use UploadThing\Client;
+use UploadThing\Exceptions\ApiException;
 
 #[AsCommand(
     name: 'app:sync-files',
-    description: 'Sync files from UploadThing',
+    description: 'Sync files from UploadThing v6 API',
 )]
 class SyncFilesCommand extends Command
 {
@@ -267,7 +341,7 @@ class SyncFilesCommand extends Command
             }
             
             return Command::SUCCESS;
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
             $output->writeln("<error>Sync failed: {$e->getMessage()}</error>");
             return Command::FAILURE;
         }
@@ -310,11 +384,12 @@ class FileUploadListener
     private function processFile($file): void
     {
         // Your file processing logic here
+        error_log("Processing file: {$file->name} ({$file->size} bytes)");
     }
 }
 ```
 
-## Webhook Handling
+## Webhook Handling (v6 API)
 
 ### Webhook Controller
 
@@ -327,7 +402,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use UploadThing\Client;
-use UploadThing\Exceptions\ApiException;
+use UploadThing\Exceptions\WebhookVerificationException;
 
 class WebhookController extends AbstractController
 {
@@ -337,37 +412,36 @@ class WebhookController extends AbstractController
 
     public function handle(Request $request): JsonResponse
     {
-        $signature = $request->headers->get('X-UploadThing-Signature');
-        $payload = $request->getContent();
-        
-        if (!$signature || !$this->verifySignature($payload, $signature)) {
+        try {
+            $webhookEvent = $this->uploadThingClient->webhooks()->handleWebhookFromGlobals(
+                $this->getParameter('uploadthing.webhook_secret')
+            );
+            
+            // Process the webhook event
+            $this->processWebhookEvent($webhookEvent);
+            
+            return new JsonResponse(['status' => 'success']);
+        } catch (WebhookVerificationException $e) {
             return new JsonResponse(['error' => 'Invalid signature'], 401);
         }
-        
-        $data = json_decode($payload, true);
-        
-        // Process webhook data
-        $this->processWebhook($data);
-        
-        return new JsonResponse(['success' => true]);
     }
 
-    private function verifySignature(string $payload, string $signature): bool
+    private function processWebhookEvent($event): void
     {
-        try {
-            return $this->uploadThingClient->webhooks()->verifySignature(
-                $payload,
-                $signature,
-                $_ENV['UPLOADTHING_WEBHOOK_SECRET']
-            );
-        } catch (ApiException $e) {
-            return false;
+        switch ($event->type) {
+            case 'file.uploaded':
+                error_log('File uploaded: ' . json_encode($event->data));
+                break;
+            case 'file.deleted':
+                error_log('File deleted: ' . json_encode($event->data));
+                break;
+            case 'upload.completed':
+                error_log('Upload completed: ' . json_encode($event->data));
+                break;
+            case 'upload.failed':
+                error_log('Upload failed: ' . json_encode($event->data));
+                break;
         }
-    }
-
-    private function processWebhook(array $data): void
-    {
-        // Your webhook processing logic here
     }
 }
 ```
@@ -395,6 +469,8 @@ use App\Service\FileUploadService;
 use PHPUnit\Framework\TestCase;
 use UploadThing\Client;
 use UploadThing\Resources\Files;
+use UploadThing\Resources\Uploads;
+use UploadThing\Exceptions\ApiException;
 
 class FileUploadServiceTest extends TestCase
 {
@@ -422,6 +498,34 @@ class FileUploadServiceTest extends TestCase
         
         $this->assertTrue($result['success']);
         $this->assertEquals('file-123', $result['file']->id);
+    }
+
+    public function testPrepareUpload(): void
+    {
+        $mockClient = $this->createMock(Client::class);
+        $mockUploads = $this->createMock(Uploads::class);
+        
+        $mockClient->expects($this->once())
+            ->method('uploads')
+            ->willReturn($mockUploads);
+            
+        $mockUploads->expects($this->once())
+            ->method('prepareUpload')
+            ->with('test.jpg', 1024, 'image/jpeg')
+            ->willReturn([
+                'data' => [
+                    [
+                        'uploadUrl' => 'https://presigned-url.com',
+                        'fileId' => 'file-123',
+                    ]
+                ]
+            ]);
+
+        $service = new FileUploadService($mockClient);
+        $result = $service->prepareUpload('test.jpg', 1024, 'image/jpeg');
+        
+        $this->assertTrue($result['success']);
+        $this->assertArrayHasKey('data', $result);
     }
 }
 ```
@@ -458,7 +562,64 @@ class FileControllerTest extends WebTestCase
         $this->assertTrue($response['success']);
         $this->assertArrayHasKey('file', $response);
     }
+
+    public function testPrepareUpload(): void
+    {
+        $client = static::createClient();
+        
+        $client->request('POST', '/files/prepare-upload', [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode([
+            'fileName' => 'test.jpg',
+            'fileSize' => 1024,
+            'mimeType' => 'image/jpeg',
+        ]));
+        
+        $this->assertResponseIsSuccessful();
+        $this->assertResponseHeaderSame('content-type', 'application/json');
+        
+        $response = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($response['success']);
+        $this->assertArrayHasKey('data', $response);
+    }
 }
+```
+
+## V6 API Specific Features
+
+### Multiple Upload Methods
+
+```php
+// Direct upload (small files)
+$file = $this->uploadThingClient->files()->uploadFile('/path/to/file.jpg');
+
+// Presigned URL upload (large files)
+$prepareData = $this->uploadThingClient->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
+// Upload to presigned URL (client-side)
+$this->uploadThingClient->uploads()->serverCallback($prepareData['data'][0]['fileId']);
+
+// Chunked upload (very large files)
+$file = $this->uploadThingClient->files()->uploadFileChunked('/path/to/large-file.zip', 'large-file.zip');
+
+// Multiple file upload
+$results = $this->uploadThingClient->uploads()->uploadMultipleFiles([
+    '/path/to/file1.jpg',
+    '/path/to/file2.jpg',
+    '/path/to/file3.jpg'
+]);
+```
+
+### Progress Tracking
+
+```php
+$file = $this->uploadThingClient->files()->uploadFileWithProgress(
+    '/path/to/large-file.zip',
+    'large-file.zip',
+    function ($uploaded, $total) {
+        $percentage = ($uploaded / $total) * 100;
+        error_log("Upload progress: {$percentage}%");
+    }
+);
 ```
 
 ## Best Practices
@@ -471,3 +632,7 @@ class FileControllerTest extends WebTestCase
 6. **Monitor Usage**: Monitor your UploadThing usage and set up alerts
 7. **Use Environment Variables**: Store sensitive configuration in environment variables
 8. **Log Operations**: Log UploadThing operations for debugging and monitoring
+9. **Use V6 API**: Make sure you're using the correct v6 API endpoints
+10. **Webhook Security**: Always verify webhook signatures for security
+11. **Configuration**: Use Symfony's parameter system for configuration
+12. **Error Handling**: Implement proper error handling and logging

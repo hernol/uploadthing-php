@@ -1,8 +1,8 @@
-# Authentication Guide
+# Authentication Guide - UploadThing v6 API
 
 ## API Key Authentication
 
-The UploadThing PHP Client uses API key authentication. You need to obtain an API key from your UploadThing dashboard and configure it in your client.
+The UploadThing PHP Client uses API key authentication with the v6 API. You need to obtain an API key from your UploadThing dashboard and configure it in your client.
 
 ## Getting Your API Key
 
@@ -50,6 +50,16 @@ $dotenv->load();
 
 $config = Config::create()->withApiKeyFromEnv();
 ```
+
+## V6 API Authentication Details
+
+The UploadThing v6 API uses Bearer token authentication:
+
+- **Header Name**: `Authorization`
+- **Format**: `Bearer <api_key>`
+- **Alternative**: `X-API-Key: <api_key>` (if Bearer not supported)
+
+The client automatically handles authentication headers for all v6 API requests.
 
 ## Security Best Practices
 
@@ -123,6 +133,29 @@ try {
 }
 ```
 
+## V6 API Specific Considerations
+
+### Base URL Configuration
+
+The v6 API uses the standard UploadThing base URL:
+
+```php
+$config = Config::create()
+    ->withApiKeyFromEnv()
+    ->withBaseUrl('https://api.uploadthing.com') // Default
+    ->withApiVersion('v6'); // Default
+```
+
+### API Version
+
+The client automatically uses the v6 API version for all requests:
+
+```php
+// All requests will use /v6/ endpoints
+$file = $client->files()->uploadFile('/path/to/file.jpg'); // Uses POST /v6/uploadFiles
+$files = $client->files()->listFiles(); // Uses GET /v6/listFiles
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -134,12 +167,16 @@ try {
 2. **"Authentication failed"**
    - Verify your API key is correct
    - Check that the API key is active in your UploadThing dashboard
-   - Ensure you're using the correct base URL
+   - Ensure you're using the correct base URL (`https://api.uploadthing.com`)
 
 3. **"Environment variable not found"**
    - Check that the environment variable name is correct
    - Verify the variable is set in your environment
    - Make sure you're loading environment files if using them
+
+4. **"Invalid API version"**
+   - Ensure you're using the v6 API version
+   - Check that your client is configured with `apiVersion: 'v6'`
 
 ### Debug Mode
 
@@ -159,3 +196,32 @@ $config = Config::create()
 ```
 
 This will log all HTTP requests and responses, including authentication headers (sanitized for security).
+
+### V6 API Endpoint Verification
+
+You can verify that you're using the correct v6 API endpoints by checking the request logs:
+
+```php
+// This should make requests to /v6/listFiles
+$files = $client->files()->listFiles();
+
+// This should make requests to /v6/prepareUpload
+$prepareData = $client->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
+
+// This should make requests to /v6/serverCallback
+$client->uploads()->serverCallback('file-id', 'completed');
+```
+
+## Webhook Authentication
+
+For webhook verification, you'll need a webhook secret (separate from your API key):
+
+```php
+// Verify webhook signature
+$isValid = $client->webhooks()->verifySignature($payload, $signature, $webhookSecret);
+
+// Handle webhook from globals
+$webhookEvent = $client->webhooks()->handleWebhookFromGlobals($webhookSecret);
+```
+
+The webhook secret is used for HMAC-SHA256 signature verification and is different from your API key.

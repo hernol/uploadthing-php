@@ -20,6 +20,7 @@ final readonly class Config
     public function __construct(
         public string $apiKey,
         public string $baseUrl = 'https://api.uploadthing.com',
+        public string $apiVersion = 'v6',
         public int $timeout = 30,
         public int $maxRetries = 3,
         public float $retryDelay = 1.0,
@@ -45,6 +46,7 @@ final readonly class Config
         return new self(
             apiKey: $apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -76,6 +78,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -93,6 +96,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -110,6 +114,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $maxRetries,
             retryDelay: $retryDelay,
@@ -127,6 +132,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -144,6 +150,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -161,6 +168,7 @@ final readonly class Config
         return new self(
             apiKey: $this->apiKey,
             baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
             timeout: $this->timeout,
             maxRetries: $this->maxRetries,
             retryDelay: $this->retryDelay,
@@ -176,6 +184,14 @@ final readonly class Config
     public function getAuthenticator(): ApiKeyAuthenticator
     {
         return new ApiKeyAuthenticator($this->apiKey);
+    }
+
+    /**
+     * Get the API version.
+     */
+    public function getApiVersion(): string
+    {
+        return $this->apiVersion;
     }
 
     /**

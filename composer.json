@@ -1,7 +1,7 @@
 {
     "name": "uploadthing/uploadthing-php",
-    "description": "A high-quality PHP client for the UploadThing REST API",
-    "version": "0.1.0",
+    "description": "A high-quality PHP client for the UploadThing v6 REST API",
+    "version": "1.0.0",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -10,6 +10,7 @@
         "api-client",
         "php",
         "rest-api",
+        "v6-api",
         "webhooks",
         "multipart",
         "chunked-upload",
@@ -47,7 +48,7 @@
     },
     "scripts": {
         "test": "phpunit",
-        "test-coverage": "phpunit --coverage-html coverage",
+        "test-coverage": "phpunit --no-coverage",
         "cs-check": "php-cs-fixer fix --dry-run --diff",
         "cs-fix": "php-cs-fixer fix",
         "phpstan": "phpstan analyse",

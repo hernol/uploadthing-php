@@ -1,4 +1,4 @@
-# Laravel Integration
+# Laravel Integration - UploadThing v6 API
 
 ## Installation
 
@@ -29,6 +29,7 @@ class UploadThingServiceProvider extends ServiceProvider
             $config = Config::create()
                 ->withApiKeyFromEnv('UPLOADTHING_API_KEY')
                 ->withBaseUrl(config('uploadthing.base_url', 'https://api.uploadthing.com'))
+                ->withApiVersion(config('uploadthing.api_version', 'v6'))
                 ->withTimeout(config('uploadthing.timeout', 30))
                 ->withRetryPolicy(
                     config('uploadthing.max_retries', 3),
@@ -64,9 +65,11 @@ Create `config/uploadthing.php`:
 return [
     'api_key' => env('UPLOADTHING_API_KEY'),
     'base_url' => env('UPLOADTHING_BASE_URL', 'https://api.uploadthing.com'),
+    'api_version' => env('UPLOADTHING_API_VERSION', 'v6'),
     'timeout' => env('UPLOADTHING_TIMEOUT', 30),
     'max_retries' => env('UPLOADTHING_MAX_RETRIES', 3),
     'retry_delay' => env('UPLOADTHING_RETRY_DELAY', 1.0),
+    'webhook_secret' => env('UPLOADTHING_WEBHOOK_SECRET'),
 ];
 ```
 
@@ -77,9 +80,11 @@ Add to your `.env` file:
 ```env
 UPLOADTHING_API_KEY=ut_sk_...
 UPLOADTHING_BASE_URL=https://api.uploadthing.com
+UPLOADTHING_API_VERSION=v6
 UPLOADTHING_TIMEOUT=30
 UPLOADTHING_MAX_RETRIES=3
 UPLOADTHING_RETRY_DELAY=1.0
+UPLOADTHING_WEBHOOK_SECRET=your-webhook-secret
 ```
 
 ## Facade
@@ -98,6 +103,7 @@ use UploadThing\Client;
  * @method static \UploadThing\Resources\Files files()
  * @method static \UploadThing\Resources\Uploads uploads()
  * @method static \UploadThing\Resources\Webhooks webhooks()
+ * @method static \UploadThing\Utils\UploadHelper uploadHelper()
  */
 class UploadThing extends Facade
 {
@@ -120,6 +126,7 @@ namespace App\Http\Controllers;
 use App\Facades\UploadThing;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use UploadThing\Exceptions\ApiException;
 
 class FileController extends Controller
 {
@@ -144,7 +151,7 @@ class FileController extends Controller
                     'size' => $file->size,
                 ],
             ]);
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -162,7 +169,7 @@ class FileController extends Controller
                 'files' => $files->files,
                 'meta' => $files->meta,
             ]);
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -179,7 +186,34 @@ class FileController extends Controller
                 'success' => true,
                 'message' => 'File deleted successfully',
             ]);
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function prepareUpload(Request $request): JsonResponse
+    {
+        $request->validate([
+            'fileName' => 'required|string',
+            'fileSize' => 'required|integer|min:1',
+            'mimeType' => 'nullable|string',
+        ]);
+
+        try {
+            $prepareData = UploadThing::uploads()->prepareUpload(
+                $request->input('fileName'),
+                $request->input('fileSize'),
+                $request->input('mimeType')
+            );
+
+            return response()->json([
+                'success' => true,
+                'data' => $prepareData,
+            ]);
+        } catch (ApiException $e) {
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -202,6 +236,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use UploadThing\Exceptions\ApiException;
 
 class ProcessFileUpload implements ShouldQueue
 {
@@ -220,7 +255,7 @@ class ProcessFileUpload implements ShouldQueue
             // Process the uploaded file
             $this->processFile($file);
             
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
             $this->fail($e);
         }
     }
@@ -228,6 +263,11 @@ class ProcessFileUpload implements ShouldQueue
     private function processFile($file): void
     {
         // Your file processing logic here
+        logger()->info('File uploaded successfully', [
+            'file_id' => $file->id,
+            'file_name' => $file->name,
+            'file_url' => $file->url,
+        ]);
     }
 }
 ```
@@ -241,11 +281,12 @@ namespace App\Console\Commands;
 
 use App\Facades\UploadThing;
 use Illuminate\Console\Command;
+use UploadThing\Exceptions\ApiException;
 
 class SyncFiles extends Command
 {
     protected $signature = 'uploadthing:sync';
-    protected $description = 'Sync files from UploadThing';
+    protected $description = 'Sync files from UploadThing v6 API';
 
     public function handle(): int
     {
@@ -259,7 +300,7 @@ class SyncFiles extends Command
             }
             
             return 0;
-        } catch (\Exception $e) {
+        } catch (ApiException $e) {
             $this->error("Sync failed: " . $e->getMessage());
             return 1;
         }
@@ -267,7 +308,59 @@ class SyncFiles extends Command
 }
 ```
 
-## Middleware
+## Webhook Handling (v6 API)
+
+### Webhook Controller
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Facades\UploadThing;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use UploadThing\Exceptions\WebhookVerificationException;
+
+class WebhookController extends Controller
+{
+    public function handle(Request $request): JsonResponse
+    {
+        try {
+            $webhookEvent = UploadThing::webhooks()->handleWebhookFromGlobals(
+                config('uploadthing.webhook_secret')
+            );
+            
+            // Process the webhook event
+            $this->processWebhookEvent($webhookEvent);
+            
+            return response()->json(['status' => 'success']);
+        } catch (WebhookVerificationException $e) {
+            return response()->json(['error' => 'Invalid signature'], 401);
+        }
+    }
+    
+    private function processWebhookEvent($event): void
+    {
+        switch ($event->type) {
+            case 'file.uploaded':
+                logger()->info('File uploaded', ['file_id' => $event->data['fileId']]);
+                break;
+            case 'file.deleted':
+                logger()->info('File deleted', ['file_id' => $event->data['fileId']]);
+                break;
+            case 'upload.completed':
+                logger()->info('Upload completed', ['file_id' => $event->data['fileId']]);
+                break;
+            case 'upload.failed':
+                logger()->error('Upload failed', ['error' => $event->data['error']]);
+                break;
+        }
+    }
+}
+```
+
+### Middleware
 
 Create middleware for webhook verification:
 
@@ -279,19 +372,24 @@ namespace App\Http\Middleware;
 use App\Facades\UploadThing;
 use Closure;
 use Illuminate\Http\Request;
+use UploadThing\Exceptions\WebhookVerificationException;
 
 class VerifyUploadThingWebhook
 {
     public function handle(Request $request, Closure $next)
     {
-        $signature = $request->header('X-UploadThing-Signature');
-        $payload = $request->getContent();
-        
-        if (!$signature || !UploadThing::webhooks()->verifySignature($payload, $signature, config('uploadthing.webhook_secret'))) {
+        try {
+            $webhookEvent = UploadThing::webhooks()->handleWebhookFromGlobals(
+                config('uploadthing.webhook_secret')
+            );
+            
+            // Add the webhook event to the request for use in controllers
+            $request->attributes->set('webhook_event', $webhookEvent);
+            
+            return $next($request);
+        } catch (WebhookVerificationException $e) {
             return response()->json(['error' => 'Invalid signature'], 401);
         }
-        
-        return $next($request);
     }
 }
 ```
@@ -304,12 +402,14 @@ Add routes for file operations:
 <?php
 
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
     Route::post('/files/upload', [FileController::class, 'upload']);
     Route::get('/files', [FileController::class, 'list']);
     Route::delete('/files/{id}', [FileController::class, 'delete']);
+    Route::post('/files/prepare-upload', [FileController::class, 'prepareUpload']);
 });
 
 // Webhook route
@@ -328,6 +428,7 @@ namespace Tests\Feature;
 
 use App\Facades\UploadThing;
 use Tests\TestCase;
+use UploadThing\Exceptions\ApiException;
 
 class FileUploadTest extends TestCase
 {
@@ -357,12 +458,83 @@ class FileUploadTest extends TestCase
         ]);
     }
 
+    public function test_can_prepare_upload(): void
+    {
+        UploadThing::shouldReceive('uploads->prepareUpload')
+            ->once()
+            ->with('test.jpg', 1024, 'image/jpeg')
+            ->andReturn([
+                'data' => [
+                    [
+                        'uploadUrl' => 'https://presigned-url.com',
+                        'fileId' => 'file-123',
+                    ]
+                ]
+            ]);
+
+        $response = $this->post('/files/prepare-upload', [
+            'fileName' => 'test.jpg',
+            'fileSize' => 1024,
+            'mimeType' => 'image/jpeg',
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'success' => true,
+            'data' => [
+                'data' => [
+                    [
+                        'uploadUrl' => 'https://presigned-url.com',
+                        'fileId' => 'file-123',
+                    ]
+                ]
+            ],
+        ]);
+    }
+
     private function createTestFile()
     {
         $file = \Illuminate\Http\UploadedFile::fake()->image('test.jpg');
         return $file;
     }
 }
+```
+
+## V6 API Specific Features
+
+### Multiple Upload Methods
+
+```php
+// Direct upload (small files)
+$file = UploadThing::files()->uploadFile('/path/to/file.jpg');
+
+// Presigned URL upload (large files)
+$prepareData = UploadThing::uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
+// Upload to presigned URL (client-side)
+UploadThing::uploads()->serverCallback($prepareData['data'][0]['fileId']);
+
+// Chunked upload (very large files)
+$file = UploadThing::files()->uploadFileChunked('/path/to/large-file.zip', 'large-file.zip');
+
+// Multiple file upload
+$results = UploadThing::uploads()->uploadMultipleFiles([
+    '/path/to/file1.jpg',
+    '/path/to/file2.jpg',
+    '/path/to/file3.jpg'
+]);
+```
+
+### Progress Tracking
+
+```php
+$file = UploadThing::files()->uploadFileWithProgress(
+    '/path/to/large-file.zip',
+    'large-file.zip',
+    function ($uploaded, $total) {
+        $percentage = ($uploaded / $total) * 100;
+        logger()->info("Upload progress: {$percentage}%");
+    }
+);
 ```
 
 ## Best Practices
@@ -373,3 +545,7 @@ class FileUploadTest extends TestCase
 4. **Use Queues**: For large file uploads, use Laravel queues to process them asynchronously
 5. **Cache Results**: Cache file lists and metadata when appropriate
 6. **Monitor Usage**: Monitor your UploadThing usage and set up alerts
+7. **Use V6 API**: Make sure you're using the correct v6 API endpoints
+8. **Webhook Security**: Always verify webhook signatures for security
+9. **Environment Variables**: Store sensitive configuration in environment variables
+10. **Logging**: Enable logging for debugging and monitoring

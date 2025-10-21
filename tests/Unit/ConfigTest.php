@@ -16,6 +16,7 @@ class ConfigTest extends TestCase
         $this->assertInstanceOf(Config::class, $config);
         $this->assertEquals('', $config->apiKey);
         $this->assertEquals('https://api.uploadthing.com', $config->baseUrl);
+        $this->assertEquals('v6', $config->apiVersion);
         $this->assertEquals(30, $config->timeout);
         $this->assertEquals(3, $config->maxRetries);
         $this->assertEquals(1.0, $config->retryDelay);

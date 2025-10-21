@@ -7,20 +7,26 @@ namespace UploadThing\Models;
 /**
  * Base webhook event model.
  */
-abstract class WebhookEvent
+class WebhookEvent
 {
     public function __construct(
-        public string $id,
         public string $type,
-        public \DateTimeImmutable $timestamp,
         public array $data,
+        public ?string $id = null,
+        public ?\DateTimeImmutable $timestamp = null,
     ) {
+        if ($this->timestamp === null) {
+            $this->timestamp = new \DateTimeImmutable();
+        }
     }
 
     /**
      * Get the event type.
      */
-    abstract public function getEventType(): string;
+    public function getEventType(): string
+    {
+        return $this->type;
+    }
 
     /**
      * Create a webhook event from array data.
