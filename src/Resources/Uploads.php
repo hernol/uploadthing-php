@@ -90,7 +90,7 @@ final class Uploads extends AbstractResource
         string $filePath, 
         ?string $name = null, 
         ?string $mimeType = null
-    ): ?File|null {
+    ): ?File {
         if (!file_exists($filePath)) {
             throw new \InvalidArgumentException("File does not exist: {$filePath}");
         }
