@@ -122,7 +122,7 @@ final class Uploads extends AbstractResource
 
         // Step 3: Finalize via polling if provided, else fallback to serverCallback when fileId is present
         $status = $this->finalizePolling($item);
-        return $status === 'ok' ? $item['key'] : null;
+        return $status === 'ok' ? $item : null;
     }
 
     /**
