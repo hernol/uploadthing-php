@@ -1,5 +1,5 @@
 {
-    "name": "uploadthing/uploadthing-php",
+    "name": "hernol/uploadthing-php",
     "description": "A high-quality PHP client for the UploadThing v6 REST API",
     "version": "1.0.0",
     "type": "library",
@@ -18,8 +18,9 @@
     ],
     "authors": [
         {
-            "name": "UploadThing PHP Client Contributors",
-            "homepage": "https://github.com/uploadthing/uploadthing-php"
+            "name": "Hernol",
+            "email": "hernol@gmail.com",
+            "homepage": "https://github.com/hernol/uploadthing-php"
         }
     ],
     "require": {
