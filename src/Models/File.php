@@ -16,7 +16,7 @@ final readonly class File
         public string $mimeType,
         public string $url,
         public \DateTimeImmutable $createdAt,
-        public \DateTimeImmutable $updatedAt,
+        public ?\DateTimeImmutable $updatedAt = null,
         public ?string $description = null,
         public ?array $metadata = null,
     ) {
