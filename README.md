@@ -230,4 +230,3 @@ See [CHANGELOG.md](CHANGELOG.md) for a list of changes and version history.
 
 ---
 
-Made with ❤️ by the UploadThing team
