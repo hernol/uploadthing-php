@@ -90,7 +90,7 @@ final class Uploads extends AbstractResource
         string $filePath, 
         ?string $name = null, 
         ?string $mimeType = null
-    ): ?string {
+    ): ?File|null {
         if (!file_exists($filePath)) {
             throw new \InvalidArgumentException("File does not exist: {$filePath}");
         }
@@ -122,7 +122,14 @@ final class Uploads extends AbstractResource
 
         // Step 3: Finalize via polling if provided, else fallback to serverCallback when fileId is present
         $status = $this->finalizePolling($item);
-        return $status === 'ok' ? $item : null;
+        return $status === 'ok' ? new File(
+            id: $item['key'],
+            name: $item['fileName'],
+            size: $item['size'] ?? 0,
+            mimeType: $item['fields']['Content-Type'] ?? '',
+            url: $item['ufsUrl'],
+            createdAt: new \DateTimeImmutable('now'),
+        ) : null;
     }
 
     /**
