@@ -2,10 +2,10 @@
 
 A high-quality, type-safe PHP client for the UploadThing v6 REST API.
 
-[![CI](https://github.com/uploadthing/uploadthing-php/workflows/CI/badge.svg)](https://github.com/uploadthing/uploadthing-php/actions)
-[![PHP Version](https://img.shields.io/packagist/php-v/uploadthing/uploadthing-php)](https://packagist.org/packages/uploadthing/uploadthing-php)
-[![Latest Version](https://img.shields.io/packagist/v/uploadthing/uploadthing-php)](https://packagist.org/packages/uploadthing/uploadthing-php)
-[![License](https://img.shields.io/packagist/l/uploadthing/uploadthing-php)](https://packagist.org/packages/uploadthing/uploadthing-php)
+[![CI](https://github.com/hernol/uploadthing-php/workflows/CI/badge.svg)](https://github.com/hernol/uploadthing-php/actions)
+[![PHP Version](https://img.shields.io/packagist/php-v/hernol/uploadthing-php)](https://packagist.org/packages/hernol/uploadthing-php)
+[![Latest Version](https://img.shields.io/packagist/v/hernol/uploadthing-php)](https://packagist.org/packages/hernol/uploadthing-php)
+[![License](https://img.shields.io/packagist/l/hernol/uploadthing-php)](https://packagist.org/packages/hernol/uploadthing-php)
 
 ## Features
 
@@ -26,7 +26,7 @@ A high-quality, type-safe PHP client for the UploadThing v6 REST API.
 ### Installation
 
 ```bash
-composer require uploadthing/uploadthing-php
+composer require hernol/uploadthing-php
 ```
 
 ### Basic Usage
