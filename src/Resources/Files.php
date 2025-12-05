@@ -129,7 +129,17 @@ final class Files extends AbstractResource
             throw new \RuntimeException('Invalid upload response');
         }
 
-        return $this->serializer->deserialize(json_encode($data['data'][0]), File::class);
+        // initialize a new File object with the data
+        $file = new File(
+            id: $data['data'][0]['key'],
+            name: $data['data'][0]['fileName'],
+            size: $data['data'][0]['size'] ?? 0,
+            mimeType: $data['data'][0]['fileType'],
+            url: $data['data'][0]['ufsUrl'],
+            createdAt: $data['data'][0]['createdAt'] ?? new \DateTimeImmutable()
+        );
+
+        return $file;
     }
 
     /**
