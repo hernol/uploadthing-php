@@ -43,3 +43,5 @@ phpstan.neon.dist
 # Psalm
 psalm-baseline.xml
 psalm.xml.dist
+
+.history/

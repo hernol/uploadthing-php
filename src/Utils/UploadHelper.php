@@ -105,9 +105,13 @@ final class UploadHelper
     public function prepareUpload(
         string $fileName,
         int $fileSize,
-        ?string $mimeType = null
+        ?string $mimeType = null,
     ): array {
-        return $this->uploadsResource->prepareUpload($fileName, $fileSize, $mimeType);
+        return $this->uploadsResource->prepareUpload(
+            $fileName,
+            $fileSize,
+            $mimeType,
+        );
     }
 
     /**

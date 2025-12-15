@@ -23,21 +23,31 @@ final class Uploads extends AbstractResource
         ApiKeyAuthenticator $authenticator,
         string $baseUrl,
         string $apiVersion,
+        ?string $callbackUrl = null,
+        ?string $callbackSlug = null,
         Serializer $serializer = new Serializer(),
     ) {
         parent::__construct($httpClient, $authenticator, $baseUrl, $apiVersion, $serializer);
+        $this->callbackUrl = $callbackUrl;
+        $this->callbackSlug = $callbackSlug;
     }
 
     /**
      * Prepare upload using v6 prepareUpload endpoint.
+     *
+     * @param string      $fileName    The original file name.
+     * @param int         $fileSize    The file size in bytes.
+     * @param string|null $mimeType    Optional MIME type. If null, it will be detected.
+     * @param array       $routeConfig Optional route configuration for UploadThing.
      */
-    public function prepareUpload(string $fileName, int $fileSize, ?string $mimeType = null): array
-    {
+    public function prepareUpload(
+        string $fileName,
+        int $fileSize,
+        ?string $mimeType = null,
+    ): array {
         $mimeType = $mimeType ?? $this->detectMimeType($fileName, '');
-        
+
         $requestBody = [
-            'callbackUrl' => 'https://2f8ea68162e0.ngrok-free.app',
-            'callbackSlug' => '',
             'files' => [
                 [
                     'name' => $fileName,
@@ -49,6 +59,15 @@ final class Uploads extends AbstractResource
                 'image'
             ]
         ];
+
+        // Always use the configured server callback for presigned uploads when available.
+        if ($this->callbackUrl !== null) {
+            $requestBody['callbackUrl'] = $this->callbackUrl;
+        }
+
+        if ($this->callbackSlug !== null) {
+            $requestBody['callbackSlug'] = $this->callbackSlug;
+        }
 
         $request = $this->createRequest('POST', "/{$this->apiVersion}/prepareUpload", body: $requestBody);
         $response = $this->sendRequest($request);
@@ -160,8 +179,6 @@ final class Uploads extends AbstractResource
         $response = $this->httpClient->sendRequest($request);
 
         if ($response->getStatusCode() >= 400) {
-            var_export('could not upload to S3');
-            exit(1);
             throw ApiException::fromResponse($response);
         }
     }

@@ -49,7 +49,14 @@ final readonly class Client
      */
     public function uploads(): Uploads
     {
-        return new Uploads($this->httpClient, $this->authenticator, $this->config->baseUrl, $this->config->apiVersion);
+        return new Uploads(
+            $this->httpClient,
+            $this->authenticator,
+            $this->config->baseUrl,
+            $this->config->apiVersion,
+            callbackUrl: $this->config->callbackUrl,
+            callbackSlug: $this->config->callbackSlug,
+        );
     }
 
     /**

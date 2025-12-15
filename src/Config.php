@@ -27,6 +27,8 @@ final readonly class Config
         public string $userAgent = 'uploadthing-php/1.0.0',
         public ?LoggerInterface $logger = null,
         public ?HttpClientInterface $httpClient = null,
+        public ?string $callbackUrl = null,
+        public ?string $callbackSlug = null,
     ) {
     }
 
@@ -53,6 +55,8 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $this->logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -85,6 +89,8 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $this->logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -103,6 +109,8 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $this->logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -121,6 +129,8 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $this->logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -139,6 +149,8 @@ final readonly class Config
             userAgent: $userAgent,
             logger: $this->logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -157,6 +169,8 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $logger,
             httpClient: $this->httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
         );
     }
 
@@ -175,6 +189,28 @@ final readonly class Config
             userAgent: $this->userAgent,
             logger: $this->logger,
             httpClient: $httpClient,
+            callbackUrl: $this->callbackUrl,
+            callbackSlug: $this->callbackSlug,
+        );
+    }
+
+    /**
+     * Set the server callback configuration used for presigned uploads.
+     */
+    public function withServerCallback(string $callbackUrl, string $callbackSlug): self
+    {
+        return new self(
+            apiKey: $this->apiKey,
+            baseUrl: $this->baseUrl,
+            apiVersion: $this->apiVersion,
+            timeout: $this->timeout,
+            maxRetries: $this->maxRetries,
+            retryDelay: $this->retryDelay,
+            userAgent: $this->userAgent,
+            logger: $this->logger,
+            httpClient: $this->httpClient,
+            callbackUrl: $callbackUrl,
+            callbackSlug: $callbackSlug,
         );
     }
 
