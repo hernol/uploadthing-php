@@ -110,7 +110,7 @@ $event = $webhooks->handleWebhookFromGlobals(
 The client uses the UploadThing v6 `/uploadFiles` endpoint which:
 1. Prepares the upload and returns S3 presigned URL data
 2. Uploads the file to S3 using multipart form data
-3. Finalizes the upload via polling
+3. Finalizes the upload via polling (retries up to 5 times with 1-second delays)
 
 ### Error Handling
 

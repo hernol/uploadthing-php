@@ -73,9 +73,9 @@ The `uploadFile()` method performs three steps:
 
 1. **Call `/v6/uploadFiles` endpoint** - Prepares the upload and returns S3 presigned URL data
 2. **Upload to S3** - Uploads the file to S3 using multipart form data
-3. **Finalize via polling** - Polls the UploadThing API to finalize the upload
+3. **Finalize via polling** - Polls the UploadThing API to finalize the upload, retrying up to 5 times with 1-second delays if the server reports "still working"
 
-The method returns a `File` object on success, or `null` if the upload couldn't be finalized.
+The method returns a `File` object on success, or `null` if the upload couldn't be finalized after all retries.
 
 ### File Object
 
@@ -322,7 +322,7 @@ Check that your API key is correct and has the necessary permissions.
 
 ### "Upload failed to finalize"
 
-This usually means the polling step failed. Check your network connection and try again.
+This usually means the polling step failed after all retry attempts (up to 5 retries with 1-second delays). This can happen with large files or slow network conditions. Check your network connection and try again.
 
 ### Webhook verification fails
 

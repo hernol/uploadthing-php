@@ -127,8 +127,9 @@ final class Uploads extends AbstractResource
 
     /**
      * Finalize upload using polling token if available. Returns status when known.
+     * Retries with 1-second sleep when status is "still working".
      */
-    private function finalizePolling(array $item): ?string
+    private function finalizePolling(array $item, int $maxRetries = 5): ?string
     {
         $fileKey = $item['key'] ?? null;
 
@@ -136,18 +137,30 @@ final class Uploads extends AbstractResource
             return null;
         }
 
-        $response = $this->sendRequest('GET', "/{$this->apiVersion}/pollUpload/{$fileKey}");
+        $attempts = 0;
 
-        if ($response->getStatusCode() >= 400) {
-            throw ApiException::fromResponse($response);
-        }
+        while ($attempts < $maxRetries) {
+            $response = $this->sendRequest('GET', "/{$this->apiVersion}/pollUpload/{$fileKey}");
 
-        $data = json_decode($response->getBody()->getContents(), true);
-        if (is_array($data) && isset($data['status']) && is_string($data['status'])) {
-            return $data['status'];
+            if ($response->getStatusCode() >= 400) {
+                throw ApiException::fromResponse($response);
+            }
+
+            $data = json_decode($response->getBody()->getContents(), true);
+            if (is_array($data) && isset($data['status']) && is_string($data['status'])) {
+                $status = $data['status'];
+
+                if ($status !== 'still working') {
+                    return $status;
+                }
+            }
+
+            $attempts++;
+            if ($attempts < $maxRetries) {
+                sleep(1);
+            }
         }
 
         return null;
     }
-
 }
