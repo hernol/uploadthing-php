@@ -1,576 +1,331 @@
-# Usage Guide - UploadThing v6 API
+# Usage Guide - UploadThing PHP Package
 
-## Basic Usage
+## Overview
 
-### Creating a Client
+This package provides a simple, Laravel-focused interface for uploading files to UploadThing and handling webhooks. It uses environment variables for configuration and provides a clean, straightforward API.
+
+## Configuration
+
+### Environment Variables
+
+Set the following environment variables in your `.env` file:
+
+```env
+UPLOADTHING_API_KEY=ut_sk_your_api_key_here
+UPLOADTHING_BASE_URL=https://api.uploadthing.com
+UPLOADTHING_API_VERSION=v6
+UPLOADTHING_TIMEOUT=30
+UPLOADTHING_CALLBACK_URL=https://your-app.com/webhook
+UPLOADTHING_CALLBACK_SLUG=your-slug
+```
+
+**Required:**
+- `UPLOADTHING_API_KEY` - Your UploadThing API key
+
+**Optional:**
+- `UPLOADTHING_BASE_URL` - API base URL (default: `https://api.uploadthing.com`)
+- `UPLOADTHING_API_VERSION` - API version (default: `v6`)
+- `UPLOADTHING_TIMEOUT` - Request timeout in seconds (default: `30`)
+- `UPLOADTHING_CALLBACK_URL` - Server callback URL for uploads
+- `UPLOADTHING_CALLBACK_SLUG` - Callback slug identifier
+
+## File Uploads
+
+### Basic Upload
+
+The simplest way to upload a file:
 
 ```php
 <?php
 
-use UploadThing\Client;
-use UploadThing\Config;
+use UploadThing\Resources\Uploads;
 
-// Create configuration
-$config = Config::create()
-    ->withApiKeyFromEnv('UPLOADTHING_API_KEY'); // Set your API key
+$uploads = new Uploads();
+$file = $uploads->uploadFile('/path/to/file.jpg');
 
-// Create client
-$client = Client::create($config);
+if ($file) {
+    echo "File uploaded: {$file->name}\n";
+    echo "File URL: {$file->url}\n";
+    echo "File ID: {$file->id}\n";
+}
 ```
 
-### Working with Files
+### Upload with Custom Name and MIME Type
 
-#### Upload a File
-
-```php
-// Upload from file path
-$file = $client->files()->uploadFile('/path/to/image.jpg');
-
-// Upload with custom name
-$file = $client->files()->uploadFile('/path/to/image.jpg', 'my-image.jpg');
-
-// Upload from string content
-$file = $client->files()->uploadContent($content, 'document.pdf');
-
-// Upload from stream resource
-$stream = fopen('/path/to/file.pdf', 'rb');
-$file = $client->files()->uploadStream($stream, 'document.pdf');
-fclose($stream);
-```
-
-#### Advanced Upload Methods
+You can specify a custom file name and MIME type:
 
 ```php
-// Upload with progress tracking
-$file = $client->files()->uploadFileWithProgress(
-    '/path/to/large-file.zip',
-    'archive.zip',
-    function ($uploaded, $total) {
-        $percentage = ($uploaded / $total) * 100;
-        echo "Upload progress: {$percentage}%\n";
-    }
-);
+<?php
 
-// Upload large files using chunked upload
-$file = $client->files()->uploadFileChunked(
-    '/path/to/very-large-file.zip',
-    'archive.zip',
-    function ($uploaded, $total) {
-        echo "Chunk uploaded: {$uploaded}/{$total} bytes\n";
-    }
-);
+use UploadThing\Resources\Uploads;
 
-// Upload using presigned URL (for very large files)
-$file = $client->uploads()->uploadWithPresignedUrl(
-    '/path/to/huge-file.zip',
-    'archive.zip'
+$uploads = new Uploads();
+$file = $uploads->uploadFile(
+    '/path/to/image.jpg',
+    'my-custom-name.jpg',  // Custom file name
+    'image/jpeg'           // Custom MIME type
 );
 ```
 
-#### Using the Upload Helper
+### How Upload Works
+
+The `uploadFile()` method performs three steps:
+
+1. **Call `/v6/uploadFiles` endpoint** - Prepares the upload and returns S3 presigned URL data
+2. **Upload to S3** - Uploads the file to S3 using multipart form data
+3. **Finalize via polling** - Polls the UploadThing API to finalize the upload
+
+The method returns a `File` object on success, or `null` if the upload couldn't be finalized.
+
+### File Object
+
+The returned `File` object contains:
 
 ```php
-// Get the upload helper for unified upload methods
-$uploadHelper = $client->uploadHelper();
+$file->id          // File ID (string)
+$file->name        // File name (string)
+$file->size        // File size in bytes (int)
+$file->mimeType    // MIME type (string)
+$file->url         // Public URL (string)
+$file->createdAt   // DateTimeImmutable
+$file->updatedAt   // DateTimeImmutable|null
+$file->description // Description|null
+$file->metadata    // Metadata array|null
+```
 
-// Upload with automatic method selection
-$file = $uploadHelper->uploadFile('/path/to/file.jpg');
+## Webhooks
 
-// Upload with custom options
-$file = $uploadHelper->uploadFile(
-    '/path/to/file.jpg',
-    'my-image.jpg',
-    'image/jpeg',
-    function ($uploaded, $total) {
-        echo "Progress: {$uploaded}/{$total}\n";
-    },
-    false // Don't use presigned URL
+### Basic Webhook Handling
+
+Handle webhooks from UploadThing:
+
+```php
+<?php
+
+use UploadThing\Resources\Webhooks;
+
+$webhooks = new Webhooks();
+
+// In a Laravel controller
+$event = $webhooks->handleWebhook(
+    $request->getContent(),
+    $request->headers->all(),
+    env('UPLOADTHING_WEBHOOK_SECRET')
 );
 
-// Upload multiple files in parallel
-$results = $uploadHelper->uploadMultipleFiles([
-    '/path/to/file1.jpg',
-    '/path/to/file2.jpg',
-    '/path/to/file3.jpg'
-], function ($progress, $total) {
-    echo "Overall progress: {$progress}/{$total}\n";
+echo "Event type: {$event->type}\n";
+echo "Event data: " . json_encode($event->data) . "\n";
+```
+
+### Handle from PHP Globals
+
+For standalone scripts or non-framework usage:
+
+```php
+<?php
+
+use UploadThing\Resources\Webhooks;
+
+$webhooks = new Webhooks();
+$event = $webhooks->handleWebhookFromGlobals(
+    env('UPLOADTHING_WEBHOOK_SECRET')
+);
+```
+
+### Verify Signature Only
+
+If you only need to verify the signature:
+
+```php
+<?php
+
+use UploadThing\Resources\Webhooks;
+
+$webhooks = new Webhooks();
+$isValid = $webhooks->verifySignature(
+    $payload,
+    $signature,
+    $secret
+);
+
+if ($isValid) {
+    echo "Signature is valid\n";
+}
+```
+
+### Parse Without Verification
+
+Parse a webhook payload without verification (not recommended for production):
+
+```php
+<?php
+
+use UploadThing\Resources\Webhooks;
+
+$webhooks = new Webhooks();
+$event = $webhooks->parsePayload($payload);
+```
+
+### Webhook Event Types
+
+The package supports the following webhook event types:
+
+- `file.uploaded` - File was successfully uploaded
+- `file.deleted` - File was deleted
+- `file.updated` - File metadata was updated
+- `upload.started` - Upload process started
+- `upload.completed` - Upload process completed
+- `upload.failed` - Upload process failed
+- `webhook.created` - Webhook was created
+- `webhook.updated` - Webhook was updated
+- `webhook.deleted` - Webhook was deleted
+
+## Webhook Handler Utility
+
+For more advanced webhook handling, use the `WebhookHandler` utility:
+
+```php
+<?php
+
+use UploadThing\Utils\WebhookHandler;
+use UploadThing\Models\WebhookEvent;
+
+$handler = WebhookHandler::create(
+    env('UPLOADTHING_WEBHOOK_SECRET'),
+    300 // Tolerance in seconds (default: 300)
+);
+
+// Register handler for specific event
+$handler->on('file.uploaded', function (WebhookEvent $event) {
+    echo "File uploaded: " . ($event->data['fileName'] ?? 'unknown') . "\n";
 });
 
-// Validate file before upload
-$uploadHelper->validateFile('/path/to/file.jpg', [
-    'maxSize' => 10 * 1024 * 1024, // 10MB
-    'allowedTypes' => ['jpg', 'png', 'gif'],
-    'allowedMimeTypes' => ['image/jpeg', 'image/png', 'image/gif']
-]);
-```
-
-#### List Files
-
-```php
-// List all files
-$files = $client->files()->listFiles();
-
-// List with pagination
-$files = $client->files()->listFiles(limit: 20, cursor: 'next-cursor');
-
-// Access file data
-foreach ($files->files as $file) {
-    echo "File: {$file->name} ({$file->size} bytes)\n";
-    echo "URL: {$file->url}\n";
-}
-```
-
-#### Get File Details
-
-```php
-$file = $client->files()->getFile('file-id');
-echo "Name: {$file->name}\n";
-echo "Size: {$file->size} bytes\n";
-echo "MIME Type: {$file->mimeType}\n";
-echo "Created: {$file->createdAt->format('Y-m-d H:i:s')}\n";
-```
-
-#### Delete a File
-
-```php
-$client->files()->deleteFile('file-id');
-```
-
-#### Rename a File
-
-```php
-$file = $client->files()->renameFile('file-id', 'new-name.jpg');
-```
-
-### Working with Uploads (v6 API)
-
-#### Prepare Upload
-
-```php
-// Prepare upload using v6 API
-$prepareData = $client->uploads()->prepareUpload(
-    fileName: 'large-file.zip',
-    fileSize: 1024 * 1024 * 100, // 100MB
-    mimeType: 'application/zip'
-);
-
-echo "Upload URL: {$prepareData['data'][0]['uploadUrl']}\n";
-echo "File ID: {$prepareData['data'][0]['fileId']}\n";
-```
-
-#### Upload Files Directly
-
-```php
-// Upload files using v6 uploadFiles endpoint
-$files = [
-    [
-        'name' => 'file1.jpg',
-        'size' => 1024 * 1024,
-        'type' => 'image/jpeg',
-        'content' => base64_encode($content)
-    ]
-];
-
-$result = $client->uploads()->uploadFiles($files);
-```
-
-#### Server Callback
-
-```php
-// Complete upload using v6 serverCallback endpoint
-$client->uploads()->serverCallback('file-id', 'completed');
-```
-
-#### Upload with Presigned URL
-
-```php
-// Upload using presigned URL flow
-$file = $client->uploads()->uploadWithPresignedUrl(
-    '/path/to/large-file.zip',
-    'archive.zip',
-    'application/zip'
-);
-```
-
-#### Upload Multiple Files
-
-```php
-// Upload multiple files in parallel
-$filePaths = ['/path/to/file1.jpg', '/path/to/file2.png', '/path/to/file3.pdf'];
-$results = $client->uploads()->uploadMultipleFiles($filePaths, function ($uploaded, $total) {
-    echo "Overall progress: {$uploaded}/{$total}\n";
+// Register handler for multiple events
+$handler->onEvents(['file.deleted', 'file.updated'], function (WebhookEvent $event) {
+    echo "File event: {$event->type}\n";
 });
 
-foreach ($results as $result) {
-    if ($result['success']) {
-        echo "✓ {$result['file']->name} uploaded\n";
-    } else {
-        echo "✗ Failed: {$result['error']}\n";
-    }
-}
+// Register catch-all handler
+$handler->on('*', function (WebhookEvent $event) {
+    echo "Received event: {$event->type}\n";
+});
+
+// Handle webhook
+$event = $handler->handle($payload, $headers);
 ```
 
-### Working with Webhooks (v6 API)
+## Webhook Verifier Utility
 
-**Note**: UploadThing v6 API does not have traditional webhook management endpoints. This section covers webhook event handling and verification.
-
-#### Webhook Signature Verification
-
-```php
-use UploadThing\Exceptions\WebhookVerificationException;
-
-// Verify webhook signature
-try {
-    $isValid = $client->webhooks()->verifySignature($payload, $signature, $secret);
-    if ($isValid) {
-        echo "Webhook signature is valid\n";
-    } else {
-        echo "Webhook signature is invalid\n";
-    }
-} catch (WebhookVerificationException $e) {
-    echo "Verification failed: " . $e->getMessage() . "\n";
-}
-
-// Verify and parse webhook payload
-try {
-    $event = $client->webhooks()->verifyAndParse($payload, $signature, $secret);
-    echo "Event type: " . $event->type . "\n";
-} catch (WebhookVerificationException $e) {
-    echo "Verification failed: " . $e->getMessage() . "\n";
-}
-```
-
-#### Webhook Event Handling
-
-```php
-// Handle incoming webhook request
-$webhookEvent = $client->webhooks()->handleWebhook($payload, $headers, $secret);
-echo "Event type: {$webhookEvent->type}\n";
-echo "Data: " . json_encode($webhookEvent->data) . "\n";
-
-// Handle webhook from PHP superglobals
-$webhookEvent = $client->webhooks()->handleWebhookFromGlobals($secret);
-```
-
-#### Custom Webhook Handler
-
-```php
-class MyWebhookHandler extends \UploadThing\Resources\Webhooks
-{
-    protected function onUploadCompleted(\UploadThing\Models\WebhookEvent $event): void
-    {
-        echo "Upload completed: " . json_encode($event->data) . "\n";
-    }
-    
-    protected function onFileDeleted(\UploadThing\Models\WebhookEvent $event): void
-    {
-        echo "File deleted: " . json_encode($event->data) . "\n";
-    }
-}
-
-$handler = new MyWebhookHandler($httpClient, $authenticator, $baseUrl, $apiVersion);
-$handler->processUploadCompletion('file-id', ['metadata' => 'value']);
-```
-
-#### Framework Integration Examples
-
-**Laravel Controller:**
+For direct control over webhook verification:
 
 ```php
 <?php
 
-namespace App\Http\Controllers;
+use UploadThing\Utils\WebhookVerifier;
 
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use UploadThing\Client;
-use UploadThing\Exceptions\WebhookVerificationException;
+$verifier = new WebhookVerifier(
+    env('UPLOADTHING_WEBHOOK_SECRET'),
+    300 // Tolerance in seconds
+);
 
-class WebhookController extends Controller
-{
-    public function __construct(private Client $uploadThingClient) {}
+// Verify signature
+$isValid = $verifier->verify($payload, $headers);
 
-    public function handle(Request $request)
-    {
-        $payload = $request->getContent();
-        $headers = $request->headers->all();
-        
-        try {
-            $webhookEvent = $this->uploadThingClient->webhooks()->handleWebhook(
-                $payload, 
-                $headers, 
-                config('uploadthing.webhook_secret')
-            );
-            
-            // Process the webhook event
-            $this->processWebhookEvent($webhookEvent);
-            
-            return response()->json(['status' => 'success']);
-        } catch (WebhookVerificationException $e) {
-            return response()->json(['error' => 'Invalid signature'], 401);
-        }
-    }
-    
-    private function processWebhookEvent($event): void
-    {
-        switch ($event->type) {
-            case 'file.uploaded':
-                logger()->info('File uploaded', ['file_id' => $event->data['fileId']]);
-                break;
-            case 'file.deleted':
-                logger()->info('File deleted', ['file_id' => $event->data['fileId']]);
-                break;
-        }
-    }
-}
+// Verify and throw exception on failure
+$verifier->verifyOrThrow($payload, $headers);
+
+// Parse payload
+$event = $verifier->parsePayload($payload);
+
+// Verify and parse in one call
+$event = $verifier->verifyAndParse($payload, $headers);
 ```
 
-**Symfony Controller:**
+## Error Handling
+
+### Exception Types
+
+The package throws the following exception types:
+
+- `UploadThing\Exceptions\ApiException` - General API errors
+- `UploadThing\Exceptions\AuthenticationException` - Authentication failures (HTTP 401)
+- `UploadThing\Exceptions\ValidationException` - Validation errors (HTTP 400)
+- `UploadThing\Exceptions\RateLimitException` - Rate limit exceeded (HTTP 429)
+- `UploadThing\Exceptions\WebhookVerificationException` - Webhook verification failures
+
+### Example Error Handling
 
 ```php
 <?php
 
-namespace App\Controller;
-
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use UploadThing\Client;
-use UploadThing\Exceptions\WebhookVerificationException;
-
-class WebhookController extends AbstractController
-{
-    public function __construct(private Client $uploadThingClient) {}
-
-    public function handle(Request $request): JsonResponse
-    {
-        $payload = $request->getContent();
-        $headers = $request->headers->all();
-        
-        try {
-            $webhookEvent = $this->uploadThingClient->webhooks()->handleWebhook(
-                $payload, 
-                $headers, 
-                $this->getParameter('uploadthing.webhook_secret')
-            );
-            
-            // Process the webhook event
-            $this->processWebhookEvent($webhookEvent);
-            
-            return new JsonResponse(['status' => 'success']);
-        } catch (WebhookVerificationException $e) {
-            return new JsonResponse(['error' => 'Invalid signature'], 401);
-        }
-    }
-    
-    private function processWebhookEvent($event): void
-    {
-        switch ($event->type) {
-            case 'file.uploaded':
-                $this->logger->info('File uploaded', ['file_id' => $event->data['fileId']]);
-                break;
-            case 'file.deleted':
-                $this->logger->info('File deleted', ['file_id' => $event->data['fileId']]);
-                break;
-        }
-    }
-}
-```
-
-## Advanced Usage
-
-### Custom Configuration
-
-```php
-use Psr\Log\LoggerInterface;
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-
-// Create logger
-$logger = new Logger('uploadthing');
-$logger->pushHandler(new StreamHandler('php://stdout', Logger::INFO));
-
-// Configure client with custom settings
-$config = Config::create()
-    ->withApiKeyFromEnv()
-    ->withBaseUrl('https://api.uploadthing.com')
-    ->withApiVersion('v6')
-    ->withTimeout(60)
-    ->withRetryPolicy(maxRetries: 5, retryDelay: 2.0)
-    ->withUserAgent('my-app/1.0.0')
-    ->withLogger($logger);
-
-$client = Client::create($config);
-```
-
-### Error Handling
-
-```php
+use UploadThing\Resources\Uploads;
 use UploadThing\Exceptions\ApiException;
 use UploadThing\Exceptions\AuthenticationException;
 use UploadThing\Exceptions\RateLimitException;
 use UploadThing\Exceptions\ValidationException;
 
+$uploads = new Uploads();
+
 try {
-    $file = $client->files()->uploadFile('/path/to/file.jpg');
+    $file = $uploads->uploadFile('/path/to/file.jpg');
 } catch (AuthenticationException $e) {
-    // Handle authentication errors
-    echo "Authentication failed: " . $e->getMessage();
+    echo "Authentication failed: " . $e->getMessage() . "\n";
 } catch (RateLimitException $e) {
-    // Handle rate limiting
-    echo "Rate limited. Retry after: " . $e->getRetryAfter() . " seconds";
+    echo "Rate limited, retry after: " . ($e->getRetryAfter() ?? 'unknown') . "s\n";
 } catch (ValidationException $e) {
-    // Handle validation errors
-    echo "Validation failed: " . $e->getMessage();
-    $errors = $e->getValidationErrors();
-    foreach ($errors as $error) {
-        echo "Error: " . $error['message'] . "\n";
+    echo "Validation error: " . $e->getMessage() . "\n";
+    if ($e->getValidationErrors()) {
+        print_r($e->getValidationErrors());
     }
 } catch (ApiException $e) {
-    // Handle other API errors
-    echo "API Error: " . $e->getMessage();
-    echo "Error Code: " . $e->getErrorCode();
-    echo "HTTP Status: " . $e->getCode();
+    echo "API error: " . $e->getMessage() . "\n";
+    echo "Error code: " . ($e->getErrorCode() ?? 'N/A') . "\n";
+    echo "HTTP status: " . $e->getCode() . "\n";
+    
+    if ($e->getErrorDetails()) {
+        print_r($e->getErrorDetails());
+    }
 } catch (\Exception $e) {
-    // Handle unexpected errors
-    echo "Unexpected error: " . $e->getMessage();
+    echo "Unexpected error: " . $e->getMessage() . "\n";
 }
 ```
 
-### Custom HTTP Client
+## Examples
 
-```php
-use UploadThing\Http\HttpClientInterface;
-use GuzzleHttp\Client as GuzzleClient;
+See the [examples](../examples/) folder for complete working examples:
 
-class CustomHttpClient implements HttpClientInterface
-{
-    public function __construct(private GuzzleClient $guzzleClient) {}
-
-    public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
-    {
-        // Add custom logic here
-        return $this->guzzleClient->send($request);
-    }
-}
-
-$customClient = new CustomHttpClient(new GuzzleClient());
-$config = Config::create()
-    ->withApiKeyFromEnv()
-    ->withHttpClient($customClient);
-
-$client = Client::create($config);
-```
-
-### Batch Operations
-
-```php
-// Upload multiple files
-$files = [];
-$filePaths = ['/path/to/file1.jpg', '/path/to/file2.jpg', '/path/to/file3.jpg'];
-
-foreach ($filePaths as $filePath) {
-    try {
-        $file = $client->files()->uploadFile($filePath);
-        $files[] = $file;
-        echo "Uploaded: {$file->name}\n";
-    } catch (ApiException $e) {
-        echo "Failed to upload {$filePath}: " . $e->getMessage() . "\n";
-    }
-}
-```
-
-### Pagination
-
-```php
-// Iterate through all files using pagination
-$cursor = null;
-$allFiles = [];
-
-do {
-    $response = $client->files()->listFiles(limit: 50, cursor: $cursor);
-    $allFiles = array_merge($allFiles, $response->files);
-    $cursor = $response->meta->nextCursor;
-} while ($response->meta->hasMore);
-
-echo "Total files: " . count($allFiles) . "\n";
-```
+- [Basic File Upload](../examples/01-basic-upload.php)
+- [Upload with Custom Options](../examples/02-upload-custom.php)
+- [Webhook Handling](../examples/03-webhook-handling.php)
+- [Webhook Handler Utility](../examples/04-webhook-handler.php)
+- [Webhook Verifier](../examples/05-webhook-verifier.php)
+- [Laravel Controller Example](../examples/06-laravel-controller.php)
+- [Error Handling](../examples/07-error-handling.php)
 
 ## Best Practices
 
-### 1. Use Environment Variables
+1. **Always set environment variables** - Never hardcode API keys
+2. **Handle exceptions properly** - Use try-catch blocks for all API calls
+3. **Verify webhooks** - Always verify webhook signatures in production
+4. **Use appropriate timeouts** - Set timeouts based on your file sizes
+5. **Log errors** - Log API errors for debugging and monitoring
 
-Always use environment variables for API keys:
+## Troubleshooting
 
-```php
-$config = Config::create()->withApiKeyFromEnv();
-```
+### "UPLOADTHING_API_KEY environment variable is not set"
 
-### 2. Handle Errors Gracefully
+Make sure you've set the `UPLOADTHING_API_KEY` in your `.env` file or environment.
 
-Always wrap API calls in try-catch blocks:
+### "Authentication failed"
 
-```php
-try {
-    $file = $client->files()->uploadFile($filePath);
-} catch (ApiException $e) {
-    // Log error and handle gracefully
-    error_log("Upload failed: " . $e->getMessage());
-    return false;
-}
-```
+Check that your API key is correct and has the necessary permissions.
 
-### 3. Use Appropriate Timeouts
+### "Upload failed to finalize"
 
-Set appropriate timeouts for your use case:
+This usually means the polling step failed. Check your network connection and try again.
 
-```php
-$config = Config::create()
-    ->withApiKeyFromEnv()
-    ->withTimeout(120); // 2 minutes for large uploads
-```
+### Webhook verification fails
 
-### 4. Enable Logging in Development
-
-Use logging to debug issues:
-
-```php
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-
-$logger = new Logger('uploadthing');
-$logger->pushHandler(new StreamHandler('php://stdout', Logger::DEBUG));
-
-$config = Config::create()
-    ->withApiKeyFromEnv()
-    ->withLogger($logger);
-```
-
-### 5. Validate Input
-
-Validate file paths and parameters before making API calls:
-
-```php
-if (!file_exists($filePath)) {
-    throw new \InvalidArgumentException("File does not exist: {$filePath}");
-}
-
-if (!is_readable($filePath)) {
-    throw new \InvalidArgumentException("File is not readable: {$filePath}");
-}
-```
-
-### 6. Use V6 API Endpoints
-
-Make sure you're using the correct v6 API endpoints:
-
-```php
-// ✅ Correct - uses v6 API
-$file = $client->files()->uploadFile('/path/to/file.jpg');
-
-// ✅ Correct - uses v6 prepareUpload endpoint
-$prepareData = $client->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
-
-// ✅ Correct - uses v6 serverCallback endpoint
-$client->uploads()->serverCallback('file-id', 'completed');
-```
+- Ensure the webhook secret matches what's configured in UploadThing
+- Check that the timestamp is within the tolerance window (default: 5 minutes)
+- Verify the signature header is being passed correctly

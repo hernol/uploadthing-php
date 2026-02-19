@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace UploadThing\Resources;
 
-use Psr\Http\Message\RequestInterface;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\Request;
 use Psr\Http\Message\ResponseInterface;
 use UploadThing\Auth\ApiKeyAuthenticator;
 use UploadThing\Exceptions\ApiException;
-use UploadThing\Http\HttpClientInterface;
-use UploadThing\Utils\Serializer;
 
 /**
  * Abstract base class for UploadThing API resources.
@@ -17,46 +16,71 @@ use UploadThing\Utils\Serializer;
  */
 abstract class AbstractResource
 {
-    public function __construct(
-        protected HttpClientInterface $httpClient,
-        protected ApiKeyAuthenticator $authenticator,
-        protected string $baseUrl,
-        protected string $apiVersion,
-        protected Serializer $serializer = new Serializer(),
-    ) {
+    protected Client $httpClient;
+    protected ApiKeyAuthenticator $authenticator;
+    protected string $baseUrl;
+    protected string $apiVersion;
+
+    public function __construct()
+    {
+        $apiKey = $this->getEnv('UPLOADTHING_API_KEY', '');
+        if (empty($apiKey)) {
+            throw new \InvalidArgumentException('UPLOADTHING_API_KEY environment variable is not set');
+        }
+
+        $this->baseUrl = $this->getEnv('UPLOADTHING_BASE_URL', 'https://api.uploadthing.com');
+        $this->apiVersion = $this->getEnv('UPLOADTHING_API_VERSION', 'v6');
+        $this->authenticator = new ApiKeyAuthenticator($apiKey);
+        $this->httpClient = new Client([
+            'timeout' => (int) $this->getEnv('UPLOADTHING_TIMEOUT', 30),
+        ]);
     }
 
     /**
-     * Create a PSR-7 request with authentication.
+     * Get environment variable value with fallback.
      */
-    protected function createRequest(
-        string $method,
-        string $path,
-        array $queryParams = [],
-        ?array $body = null,
-    ): RequestInterface {
+    protected function getEnv(string $key, mixed $default = ''): mixed
+    {
+        if (function_exists('env')) {
+            $value = env($key, $default);
+            return $value !== null ? $value : $default;
+        }
+
+        // Fallback for non-Laravel environments
+        $value = $_ENV[$key] ?? getenv($key);
+        return $value !== false ? $value : $default;
+    }
+
+    /**
+     * Send a request and handle the response.
+     */
+    protected function sendRequest(string $method, string $path, array $queryParams = [], ?array $body = null): ResponseInterface
+    {
         $uri = $this->baseUrl . $path;
 
         if (!empty($queryParams)) {
             $uri .= '?' . http_build_query($queryParams);
         }
 
-        $request = new \GuzzleHttp\Psr7\Request($method, $uri);
+        $request = new Request($method, $uri);
+
+        $headers = [];
+        if ($body !== null) {
+            $headers['Content-Type'] = 'application/json';
+        }
+
+        $request = $this->authenticator->authenticate($request);
+        
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
+        }
 
         if ($body !== null) {
             $request = $request->withBody(
                 \GuzzleHttp\Psr7\Utils::streamFor(json_encode($body))
-            )->withHeader('Content-Type', 'application/json');
+            );
         }
 
-        return $this->authenticator->authenticate($request);
-    }
-
-    /**
-     * Send a request and handle the response.
-     */
-    protected function sendRequest(RequestInterface $request): ResponseInterface
-    {
         $response = $this->httpClient->sendRequest($request);
 
         if ($response->getStatusCode() >= 400) {

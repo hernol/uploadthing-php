@@ -1,6 +1,6 @@
-# UploadThing PHP Client - v6 API Compatible
+# UploadThing PHP Client - Laravel Package
 
-A high-quality, type-safe PHP client for the UploadThing v6 REST API.
+A simplified, Laravel-focused PHP client for the UploadThing v6 REST API.
 
 [![CI](https://github.com/hernol/uploadthing-php/workflows/CI/badge.svg)](https://github.com/hernol/uploadthing-php/actions)
 [![PHP Version](https://img.shields.io/packagist/php-v/hernol/uploadthing-php)](https://packagist.org/packages/hernol/uploadthing-php)
@@ -9,17 +9,13 @@ A high-quality, type-safe PHP client for the UploadThing v6 REST API.
 
 ## Features
 
-- ✅ **V6 API Compatible**: Uses correct UploadThing v6 endpoints
+- ✅ **V6 API Compatible**: Uses UploadThing v6 `/uploadFiles` endpoint
 - ✅ **Type-safe**: Full PHP 8.1+ type declarations and strict typing
-- ✅ **PSR-18 compliant**: Uses standard HTTP client interfaces
-- ✅ **Comprehensive error handling**: Typed exceptions with detailed error information
-- ✅ **Automatic retries**: Exponential backoff with configurable retry policies
-- ✅ **Rate limiting**: Built-in rate limit handling and backoff
-- ✅ **Multiple upload methods**: Direct upload, presigned URL, chunked uploads
-- ✅ **Progress tracking**: Real-time upload progress callbacks
+- ✅ **Laravel-focused**: Designed specifically for Laravel applications
+- ✅ **Environment-based configuration**: Simple configuration via environment variables
+- ✅ **File uploads**: Upload files using presigned S3 URLs
 - ✅ **Webhook verification**: HMAC-SHA256 signature validation with timestamp tolerance
-- ✅ **Framework integrations**: Ready-to-use Laravel and Symfony integrations
-- ✅ **Comprehensive testing**: 100% test coverage with unit and integration tests
+- ✅ **Simple API**: Clean, straightforward interface
 
 ## Quick Start
 
@@ -29,81 +25,92 @@ A high-quality, type-safe PHP client for the UploadThing v6 REST API.
 composer require hernol/uploadthing-php
 ```
 
+### Configuration
+
+Set your environment variables in your `.env` file:
+
+```env
+UPLOADTHING_API_KEY=ut_sk_your_api_key_here
+UPLOADTHING_BASE_URL=https://api.uploadthing.com
+UPLOADTHING_API_VERSION=v6
+UPLOADTHING_TIMEOUT=30
+UPLOADTHING_CALLBACK_URL=https://your-app.com/webhook
+UPLOADTHING_CALLBACK_SLUG=your-slug
+```
+
 ### Basic Usage
 
+#### Upload a File
+
 ```php
 <?php
 
-use UploadThing\Client;
-use UploadThing\Config;
+use UploadThing\Resources\Uploads;
 
-// Create configuration
-$config = Config::create()
-    ->withApiKeyFromEnv('UPLOADTHING_API_KEY'); // Set your API key
+$uploads = new Uploads();
+$file = $uploads->uploadFile('/path/to/file.jpg');
 
-// Create client
-$client = Client::create($config);
+if ($file) {
+    echo "File uploaded: {$file->name}\n";
+    echo "File URL: {$file->url}\n";
+    echo "File ID: {$file->id}\n";
+}
+```
 
-// Upload a file (automatic method selection)
-$file = $client->uploadHelper()->uploadFile('/path/to/file.jpg');
+#### Upload with Custom Name and MIME Type
 
-// Upload with progress tracking
-$file = $client->files()->uploadFileWithProgress(
-    '/path/to/large-file.zip',
-    'archive.zip',
-    function ($uploaded, $total) {
-        echo "Progress: " . round(($uploaded / $total) * 100, 2) . "%\n";
-    }
+```php
+<?php
+
+use UploadThing\Resources\Uploads;
+
+$uploads = new Uploads();
+$file = $uploads->uploadFile(
+    '/path/to/image.jpg',
+    'my-custom-name.jpg',
+    'image/jpeg'
+);
+```
+
+#### Handle Webhooks
+
+```php
+<?php
+
+use UploadThing\Resources\Webhooks;
+
+$webhooks = new Webhooks();
+
+// Handle webhook from Laravel request
+$event = $webhooks->handleWebhook(
+    $request->getContent(),
+    $request->headers->all(),
+    env('UPLOADTHING_WEBHOOK_SECRET')
 );
 
-// Upload using presigned URL for very large files
-$file = $client->uploads()->uploadWithPresignedUrl('/path/to/huge-file.zip');
-
-// Handle webhooks with signature verification
-$webhookEvent = $client->webhooks()->handleWebhookFromGlobals('your-webhook-secret');
-echo "Event type: {$webhookEvent->type}\n";
-
-// List files
-$files = $client->files()->listFiles();
-
-// Get file details
-$fileDetails = $client->files()->getFile($file->id);
+echo "Event type: {$event->type}\n";
+echo "Event data: " . json_encode($event->data) . "\n";
 ```
 
-### V6 API Endpoints
-
-The client uses the following UploadThing v6 API endpoints:
-
-| **Endpoint** | **Method** | **Purpose** |
-|--------------|------------|-------------|
-| `/v6/prepareUpload` | POST | Prepare file upload, get presigned URL |
-| `/v6/uploadFiles` | POST | Upload files directly |
-| `/v6/serverCallback` | POST | Complete upload process |
-| `/v6/listFiles` | GET | List files with pagination |
-| `/v6/getFile` | GET | Get file details |
-| `/v6/deleteFile` | POST | Delete file |
-| `/v6/renameFile` | POST | Rename file |
-
-### Authentication
+#### Handle Webhook from PHP Globals
 
 ```php
 <?php
 
-use UploadThing\Config;
+use UploadThing\Resources\Webhooks;
 
-// Using API key
-$config = Config::create()
-    ->withApiKey('ut_sk_...');
-
-// Using environment variable
-$config = Config::create()
-    ->withApiKeyFromEnv('UPLOADTHING_API_KEY');
-
-// With v6 API version (default)
-$config = Config::create()
-    ->withApiKeyFromEnv()
-    ->withApiVersion('v6');
+$webhooks = new Webhooks();
+$event = $webhooks->handleWebhookFromGlobals(
+    env('UPLOADTHING_WEBHOOK_SECRET')
+);
 ```
+
+### V6 API Endpoint
+
+The client uses the UploadThing v6 `/uploadFiles` endpoint which:
+1. Prepares the upload and returns S3 presigned URL data
+2. Uploads the file to S3 using multipart form data
+3. Finalizes the upload via polling
 
 ### Error Handling
 
@@ -113,62 +120,38 @@ $config = Config::create()
 use UploadThing\Exceptions\ApiException;
 use UploadThing\Exceptions\AuthenticationException;
 use UploadThing\Exceptions\RateLimitException;
+use UploadThing\Exceptions\ValidationException;
 
 try {
-    $file = $client->files()->uploadFile('/path/to/file.jpg');
+    $file = $uploads->uploadFile('/path/to/file.jpg');
 } catch (AuthenticationException $e) {
-    // Handle authentication errors
     echo "Invalid API key: " . $e->getMessage();
 } catch (RateLimitException $e) {
-    // Handle rate limiting
-    echo "Rate limited. Retry after: " . $e->getRetryAfter();
+    echo "Rate limited, retry after: " . $e->getRetryAfter() . "s";
+} catch (ValidationException $e) {
+    echo "Validation error: " . $e->getMessage();
 } catch (ApiException $e) {
-    // Handle other API errors
     echo "API Error: " . $e->getMessage();
     echo "Error Code: " . $e->getErrorCode();
 }
 ```
 
-### Upload Methods
+## Examples
 
-#### Direct Upload (Small Files)
-```php
-$file = $client->files()->uploadContent($content, 'file.txt');
-```
+See the [examples](examples/) folder for complete usage examples:
 
-#### Presigned URL Upload (Large Files)
-```php
-// Prepare upload
-$prepareData = $client->uploads()->prepareUpload('file.jpg', 1024 * 1024, 'image/jpeg');
-
-// Upload to presigned URL (client-side)
-// Then complete the upload
-$client->uploads()->serverCallback($prepareData['data'][0]['fileId']);
-```
-
-#### Chunked Upload (Very Large Files)
-```php
-$file = $client->files()->uploadFileChunked('/path/to/large-file.zip', 'large-file.zip');
-```
-
-#### Multiple File Upload
-```php
-$results = $client->uploads()->uploadMultipleFiles([
-    '/path/to/file1.jpg',
-    '/path/to/file2.jpg',
-    '/path/to/file3.jpg'
-]);
-```
+- [Basic File Upload](examples/01-basic-upload.php)
+- [Upload with Custom Options](examples/02-upload-custom.php)
+- [Webhook Handling](examples/03-webhook-handling.php)
+- [Webhook Handler Utility](examples/04-webhook-handler.php)
+- [Webhook Verifier](examples/05-webhook-verifier.php)
+- [Laravel Controller Example](examples/06-laravel-controller.php)
+- [Error Handling](examples/07-error-handling.php)
 
 ## Documentation
 
-- [📖 Full Documentation](docs/OVERVIEW.md)
-- [🔐 Authentication Guide](docs/AUTH.md)
-- [💡 Usage Examples](docs/USAGE.md)
+- [📖 Usage Guide](docs/USAGE.md)
 - [⚡ Laravel Integration](docs/LARAVEL.md)
-- [🔧 Symfony Integration](docs/SYMFONY.md)
-- [📋 API Inventory](INVENTORY.md)
-- [📝 V6 API Examples](README_V6.md)
 
 ## Requirements
 
@@ -184,31 +167,59 @@ $results = $client->uploads()->uploadMultipleFiles([
 | 8.2         | ✅ Full support |
 | 8.3         | ✅ Full support |
 
-## Framework Integration
+## Laravel Integration
 
-### Laravel
+### Service Provider (Optional)
+
+You can create a service provider to bind the resources:
 
 ```php
-// In your controller
-use App\Facades\UploadThing;
+<?php
 
-$file = UploadThing::files()->uploadFile('/path/to/file.jpg');
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use UploadThing\Resources\Uploads;
+use UploadThing\Resources\Webhooks;
+
+class UploadThingServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->singleton(Uploads::class, function () {
+            return new Uploads();
+        });
+
+        $this->app->singleton(Webhooks::class, function () {
+            return new Webhooks();
+        });
+    }
+}
 ```
 
-### Symfony
+### Usage in Controllers
 
 ```php
-// In your controller
-public function __construct(private Client $uploadThingClient) {}
+<?php
 
-public function upload(Request $request): JsonResponse
+namespace App\Http\Controllers;
+
+use UploadThing\Resources\Uploads;
+use Illuminate\Http\Request;
+
+class FileController extends Controller
 {
-    $file = $this->uploadThingClient->files()->uploadFile(
-        $request->files->get('file')->getPathname(),
-        $request->files->get('file')->getClientOriginalName()
-    );
-    
-    return new JsonResponse(['file' => $file]);
+    public function upload(Request $request, Uploads $uploads)
+    {
+        $file = $request->file('file');
+        $uploaded = $uploads->uploadFile(
+            $file->getPathname(),
+            $file->getClientOriginalName(),
+            $file->getMimeType()
+        );
+
+        return response()->json(['file' => $uploaded]);
+    }
 }
 ```
 

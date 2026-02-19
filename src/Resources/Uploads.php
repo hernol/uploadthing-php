@@ -4,108 +4,31 @@ declare(strict_types=1);
 
 namespace UploadThing\Resources;
 
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
-use UploadThing\Auth\ApiKeyAuthenticator;
+use GuzzleHttp\Psr7\Request;
 use UploadThing\Exceptions\ApiException;
-use UploadThing\Http\HttpClientInterface;
 use UploadThing\Models\File;
-use UploadThing\Models\UploadSession;
-use UploadThing\Utils\Serializer;
+use UploadThing\Utils\MultipartBuilder;
 
 /**
  * Uploads resource for managing file uploads using UploadThing v6 API.
  */
 final class Uploads extends AbstractResource
 {
-    public function __construct(
-        HttpClientInterface $httpClient,
-        ApiKeyAuthenticator $authenticator,
-        string $baseUrl,
-        string $apiVersion,
-        ?string $callbackUrl = null,
-        ?string $callbackSlug = null,
-        Serializer $serializer = new Serializer(),
-    ) {
-        parent::__construct($httpClient, $authenticator, $baseUrl, $apiVersion, $serializer);
-        $this->callbackUrl = $callbackUrl;
-        $this->callbackSlug = $callbackSlug;
-    }
+    private ?string $callbackUrl;
+    private ?string $callbackSlug;
 
-    /**
-     * Prepare upload using v6 prepareUpload endpoint.
-     *
-     * @param string      $fileName    The original file name.
-     * @param int         $fileSize    The file size in bytes.
-     * @param string|null $mimeType    Optional MIME type. If null, it will be detected.
-     * @param array       $routeConfig Optional route configuration for UploadThing.
-     */
-    public function prepareUpload(
-        string $fileName,
-        int $fileSize,
-        ?string $mimeType = null,
-    ): array {
-        $mimeType = $mimeType ?? $this->detectMimeType($fileName, '');
-
-        $requestBody = [
-            'files' => [
-                [
-                    'name' => $fileName,
-                    'size' => $fileSize,
-                    'type' => $mimeType
-                ]
-            ],
-            'routeConfig' => [
-                'image'
-            ]
-        ];
-
-        // Always use the configured server callback for presigned uploads when available.
-        if ($this->callbackUrl !== null) {
-            $requestBody['callbackUrl'] = $this->callbackUrl;
-        }
-
-        if ($this->callbackSlug !== null) {
-            $requestBody['callbackSlug'] = $this->callbackSlug;
-        }
-
-        $request = $this->createRequest('POST', "/{$this->apiVersion}/prepareUpload", body: $requestBody);
-        $response = $this->sendRequest($request);
-
-        return json_decode($response->getBody()->getContents(), true);
-    }
-
-    /**
-     * Upload files using v6 uploadFiles endpoint.
-     */
-    public function uploadFiles(array $files): array
+    public function __construct()
     {
-        $requestBody = ['files' => $files];
-        
-        $request = $this->createRequest('POST', "/{$this->apiVersion}/uploadFiles", body: $requestBody);
-        $response = $this->sendRequest($request);
-
-        return json_decode($response->getBody()->getContents(), true);
+        parent::__construct();
+        $this->callbackUrl = $this->getEnv('UPLOADTHING_CALLBACK_URL') ?: null;
+        $this->callbackSlug = $this->getEnv('UPLOADTHING_CALLBACK_SLUG') ?: null;
     }
 
-    /**
-     * Server callback using v6 serverCallback endpoint.
-     */
-    public function serverCallback(string $fileId, string $status = 'completed'): void
-    {
-        $requestBody = [
-            'fileId' => $fileId,
-            'status' => $status
-        ];
-
-        $request = $this->createRequest('POST', "/{$this->apiVersion}/serverCallback", body: $requestBody);
-        $this->sendRequest($request);
-    }
 
     /**
-     * Upload a file using presigned URL flow.
+     * Upload a file using the v6 uploadFiles endpoint.
      */
-    public function uploadWithPresignedUrl(
+    public function uploadFile(
         string $filePath, 
         ?string $name = null, 
         ?string $mimeType = null
@@ -123,30 +46,49 @@ final class Uploads extends AbstractResource
 
         $mimeType = $mimeType ?? $this->detectMimeType($name, '');
         
-        // Step 1: Prepare upload
-        $prepareResponse = $this->prepareUpload($name, $fileSize, $mimeType);
+        // Step 1: Call uploadFiles endpoint
+        $requestBody = [
+            'files' => [
+                [
+                    'name' => $name,
+                    'size' => $fileSize,
+                    'type' => $mimeType
+                ]
+            ]
+        ];
 
-        if (!isset($prepareResponse[0])) {
-            throw new \RuntimeException('Invalid prepareUpload response');
+        if ($this->callbackUrl !== null) {
+            $requestBody['callbackUrl'] = $this->callbackUrl;
         }
 
-        $item = $prepareResponse[0];
+        if ($this->callbackSlug !== null) {
+            $requestBody['callbackSlug'] = $this->callbackSlug;
+        }
+
+        $response = $this->sendRequest('POST', "/{$this->apiVersion}/uploadFiles", [], $requestBody);
+        $data = json_decode($response->getBody()->getContents(), true);
+
+        if (!isset($data['data'][0])) {
+            throw new \RuntimeException('Invalid uploadFiles response');
+        }
+
+        $item = $data['data'][0];
 
         if (!isset($item['url'], $item['fields']) || !is_array($item['fields'])) {
-            throw new \RuntimeException('Missing S3 POST data (url/fields) from prepareUpload');
+            throw new \RuntimeException('Missing S3 POST data (url/fields) from uploadFiles');
         }
 
         // Step 2: Upload file to S3 using POST form fields
         $this->uploadToS3Post($item['url'], $item['fields'], $filePath, $mimeType);
 
-        // Step 3: Finalize via polling if provided, else fallback to serverCallback when fileId is present
+        // Step 3: Finalize via polling
         $status = $this->finalizePolling($item);
-        return $status === 'ok' ? new File(
+        return $status === 'ok' || $status === 'completed' || $status === 'done' ? new File(
             id: $item['key'],
             name: $item['fileName'],
             size: $item['size'] ?? 0,
             mimeType: $item['fields']['Content-Type'] ?? '',
-            url: $item['ufsUrl'],
+            url: $item['ufsUrl'] ?? '',
             createdAt: new \DateTimeImmutable('now'),
         ) : null;
     }
@@ -161,7 +103,7 @@ final class Uploads extends AbstractResource
             throw new \RuntimeException("Failed to read file: {$filePath}");
         }
 
-        $multipartBuilder = new \UploadThing\Utils\MultipartBuilder();
+        $multipartBuilder = new MultipartBuilder();
 
         // Add all S3 POST fields
         foreach ($fields as $fieldName => $fieldValue) {
@@ -171,7 +113,7 @@ final class Uploads extends AbstractResource
         // Add the file payload as the final part
         $multipartBuilder->addFile('file', basename($filePath), $content, $contentType);
 
-        $request = new \GuzzleHttp\Psr7\Request('POST', $s3Url);
+        $request = new Request('POST', $s3Url);
         $request = $request
             ->withHeader('Content-Type', $multipartBuilder->getContentType())
             ->withBody(\GuzzleHttp\Psr7\Utils::streamFor($multipartBuilder->build()));
@@ -184,24 +126,21 @@ final class Uploads extends AbstractResource
     }
 
     /**
-     * Finalize upload using polling token if available. Returns fileId when known.
+     * Finalize upload using polling token if available. Returns status when known.
      */
-    private function finalizePolling(array $prepareItem): ?string
+    private function finalizePolling(array $item): ?string
     {
-        $pollingUrl = $prepareItem['pollingUrl'] ?? null;
-        $pollingJwt = $prepareItem['pollingJwt'] ?? null;
-        $fileKey = $prepareItem['key'] ?? null;
+        $fileKey = $item['key'] ?? null;
 
-        if (!$pollingUrl || !$pollingJwt || !$fileKey) {
+        if (!$fileKey) {
             return null;
         }
 
-        $pollingUrlPath = parse_url($pollingUrl, PHP_URL_PATH);
-        $request = $this->createRequest('POST', $pollingUrlPath, body: [
-            'fileKey' => $fileKey,
-            'callbackData' => ''
-        ]);
-        $response = $this->sendRequest($request);
+        $response = $this->sendRequest('GET', "/{$this->apiVersion}/pollUpload/{$fileKey}");
+
+        if ($response->getStatusCode() >= 400) {
+            throw ApiException::fromResponse($response);
+        }
 
         $data = json_decode($response->getBody()->getContents(), true);
         if (is_array($data) && isset($data['status']) && is_string($data['status'])) {
@@ -209,95 +148,6 @@ final class Uploads extends AbstractResource
         }
 
         return null;
-    }
-
-    /**
-     * Upload multiple files at once.
-     */
-    public function uploadMultipleFiles(array $filePaths, ?callable $progressCallback = null): array
-    {
-        $files = [];
-        $totalSize = 0;
-
-        // Prepare file data
-        foreach ($filePaths as $filePath) {
-            if (!file_exists($filePath)) {
-                throw new \InvalidArgumentException("File does not exist: {$filePath}");
-            }
-
-            $name = basename($filePath);
-            $fileSize = filesize($filePath);
-            
-            if ($fileSize === false) {
-                throw new \RuntimeException("Failed to get file size: {$filePath}");
-            }
-
-            $totalSize += $fileSize;
-            $files[] = [
-                'name' => $name,
-                'size' => $fileSize,
-                'type' => $this->detectMimeType($name, ''),
-                'path' => $filePath
-            ];
-        }
-
-        // Prepare upload for all files
-        $prepareData = [];
-        foreach ($files as $file) {
-            $prepareData[] = [
-                'name' => $file['name'],
-                'size' => $file['size'],
-                'type' => $file['type']
-            ];
-        }
-
-        $prepareResponse = $this->prepareUploadMultiple($prepareData);
-        
-        if (!isset($prepareResponse['data'])) {
-            throw new \RuntimeException('Failed to prepare upload');
-        }
-
-        $uploadedFiles = [];
-        $uploadedSize = 0;
-
-        // Upload each file
-        foreach ($prepareResponse as $index => $uploadData) {
-            if (!isset($uploadData['url'], $uploadData['fields']) || !is_array($uploadData['fields'])) {
-                continue;
-            }
-
-            $filePath = $files[$index]['path'];
-            $this->uploadToS3Post($uploadData['url'], $uploadData['fields'], $filePath, $files[$index]['type']);
-
-            $uploadedSize += $files[$index]['size'];
-            
-            if ($progressCallback !== null) {
-                $progressCallback($uploadedSize, $totalSize);
-            }
-
-            // Complete upload
-            $status = $this->finalizePolling($uploadData);
-            if ($status === 'ok') {
-                $uploadedFiles[] = $uploadData['key'];
-            } else {
-                throw new \RuntimeException('Upload not completed: ' . $status);
-            }
-        }
-
-        return $uploadedFiles;
-    }
-
-    /**
-     * Prepare upload for multiple files.
-     */
-    private function prepareUploadMultiple(array $files): array
-    {
-        $requestBody = ['files' => $files];
-
-        $request = $this->createRequest('POST', "/{$this->apiVersion}/prepareUpload", body: $requestBody);
-        $response = $this->sendRequest($request);
-
-        return json_decode($response->getBody()->getContents(), true);
     }
 
 }

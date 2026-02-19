@@ -4,31 +4,17 @@ declare(strict_types=1);
 
 namespace UploadThing\Resources;
 
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
-use UploadThing\Auth\ApiKeyAuthenticator;
-use UploadThing\Exceptions\ApiException;
-use UploadThing\Http\HttpClientInterface;
 use UploadThing\Models\WebhookEvent;
-use UploadThing\Utils\Serializer;
 use UploadThing\Utils\WebhookVerifier;
 
 /**
  * Webhooks resource for handling webhook events using UploadThing v6 API.
- * 
- * Note: UploadThing v6 API doesn't have traditional webhook management endpoints.
- * This resource focuses on webhook event handling and verification.
  */
 final class Webhooks extends AbstractResource
 {
-    public function __construct(
-        HttpClientInterface $httpClient,
-        ApiKeyAuthenticator $authenticator,
-        string $baseUrl,
-        string $apiVersion,
-        Serializer $serializer = new Serializer(),
-    ) {
-        parent::__construct($httpClient, $authenticator, $baseUrl, $apiVersion, $serializer);
+    public function __construct()
+    {
+        parent::__construct();
     }
 
     /**

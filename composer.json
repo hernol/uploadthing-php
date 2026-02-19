@@ -1,7 +1,7 @@
 {
     "name": "hernol/uploadthing-php",
     "description": "A high-quality PHP client for the UploadThing v6 REST API",
-    "version": "1.2.1",
+    "version": "2.0.0",
     "type": "library",
     "license": "MIT",
     "keywords": [
