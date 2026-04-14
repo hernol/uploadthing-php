@@ -63,6 +63,14 @@ class ApiException extends \Exception
             );
         }
         
+        if (is_string($data['error'] ?? null)) {
+            return new self(
+                message: $data['error'],
+                code: $response->getStatusCode(),
+                response: $response,
+            );
+        }
+
         $errorData = $data['error'] ?? [];
         $message = is_string($errorData['message'] ?? null) ? $errorData['message'] : 'API request failed';
         $errorCode = is_string($errorData['code'] ?? null) ? $errorData['code'] : null;

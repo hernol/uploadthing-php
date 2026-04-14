@@ -26,7 +26,7 @@ final class Uploads extends AbstractResource
 
 
     /**
-     * Upload a file using the v6 uploadFiles endpoint.
+     * Upload a file using the v7 server-side upload flow.
      */
     public function uploadFile(
         string $filePath, 
@@ -46,51 +46,78 @@ final class Uploads extends AbstractResource
 
         $mimeType = $mimeType ?? $this->detectMimeType($name, '');
         
-        // Step 1: Call uploadFiles endpoint
-        $requestBody = [
-            'files' => [
-                [
-                    'name' => $name,
-                    'size' => $fileSize,
-                    'type' => $mimeType
-                ]
-            ]
-        ];
+        $preparedUpload = $this->prepareUpload($name, $fileSize, $mimeType);
+        $uploadResult = $this->uploadToSignedUrl($preparedUpload['url'], $filePath, $mimeType);
 
-        if ($this->callbackUrl !== null) {
-            $requestBody['callbackUrl'] = $this->callbackUrl;
-        }
+        return new File(
+            id: $preparedUpload['key'],
+            name: $name,
+            size: $fileSize,
+            mimeType: $mimeType,
+            url: $uploadResult['ufsUrl'] ?? $uploadResult['url'] ?? $uploadResult['appUrl'] ?? '',
+            createdAt: new \DateTimeImmutable('now'),
+            metadata: $uploadResult,
+        );
+    }
 
-        if ($this->callbackSlug !== null) {
-            $requestBody['callbackSlug'] = $this->callbackSlug;
-        }
+    /**
+     * Request a signed UploadThing ingest URL for a server-side upload.
+     *
+     * @return array{url:string,key:string}
+     */
+    private function prepareUpload(string $name, int $fileSize, string $mimeType): array
+    {
+        $response = $this->sendRequest('POST', '/v7/prepareUpload', [], [
+            'fileName' => $name,
+            'fileSize' => $fileSize,
+            'fileType' => $mimeType,
+        ]);
 
-        $response = $this->sendRequest('POST', "/{$this->apiVersion}/uploadFiles", [], $requestBody);
         $data = json_decode($response->getBody()->getContents(), true);
 
-        if (!isset($data['data'][0])) {
-            throw new \RuntimeException('Invalid uploadFiles response');
+        if (!is_array($data) || !isset($data['url'], $data['key'])) {
+            throw new \RuntimeException('Invalid prepareUpload response');
         }
 
-        $item = $data['data'][0];
+        return [
+            'url' => (string) $data['url'],
+            'key' => (string) $data['key'],
+        ];
+    }
 
-        if (!isset($item['url'], $item['fields']) || !is_array($item['fields'])) {
-            throw new \RuntimeException('Missing S3 POST data (url/fields) from uploadFiles');
+    /**
+     * Upload a file to a signed UploadThing ingest URL.
+     *
+     * @return array<string,mixed>
+     */
+    private function uploadToSignedUrl(string $signedUrl, string $filePath, string $mimeType): array
+    {
+        $content = file_get_contents($filePath);
+        if ($content === false) {
+            throw new \RuntimeException("Failed to read file: {$filePath}");
         }
 
-        // Step 2: Upload file to S3 using POST form fields
-        $this->uploadToS3Post($item['url'], $item['fields'], $filePath, $mimeType);
+        $multipartBuilder = new MultipartBuilder();
+        $multipartBuilder->addFile('file', basename($filePath), $content, $mimeType);
 
-        // Step 3: Finalize via polling
-        $status = $this->finalizePolling($item);
-        return $status === 'ok' || $status === 'completed' || $status === 'done' ? new File(
-            id: $item['key'],
-            name: $item['fileName'],
-            size: $item['size'] ?? 0,
-            mimeType: $item['fields']['Content-Type'] ?? '',
-            url: $item['ufsUrl'] ?? '',
-            createdAt: new \DateTimeImmutable('now'),
-        ) : null;
+        $request = new Request('PUT', $signedUrl);
+        $request = $request
+            ->withHeader('Content-Type', $multipartBuilder->getContentType())
+            ->withBody(\GuzzleHttp\Psr7\Utils::streamFor($multipartBuilder->build()));
+
+        $response = $this->httpClient->sendRequest($request);
+
+        if ($response->getStatusCode() >= 400) {
+            throw ApiException::fromResponse($response);
+        }
+
+        $data = json_decode($response->getBody()->getContents(), true);
+
+        if (!is_array($data)) {
+            throw new \RuntimeException('Invalid upload response');
+        }
+
+        return $data;
     }
 
     /**
